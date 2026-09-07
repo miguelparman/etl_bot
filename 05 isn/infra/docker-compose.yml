@@ -1,0 +1,15 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: isn_contactos_sqlserver_test
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${SA_PASSWORD:-Contactos_Test_2026!}"
+      MSSQL_PID: "Developer"
+    ports:
+      - "14331:1433"
+    volumes:
+      - isn_contactos_sqlserver_data:/var/opt/mssql
+
+volumes:
+  isn_contactos_sqlserver_data:

@@ -1,0 +1,3 @@
+-- Tarea 'SECUENCIA NUEVA\Contenedor de secuencias 1\DELETE', conexión 162.CL_ISN.
+DELETE [CL_ISN].[dbo].[TBL_ISN_PRE_CONSOLIDADO]
+WHERE FECHA_DE_CARGA = CAST(GETDATE() AS date)
