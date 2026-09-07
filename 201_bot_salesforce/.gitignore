@@ -1,0 +1,18 @@
+# Secretos y sesiones - nunca versionar
+.env
+playwright/.auth/
+downloads/
+logs/
+screenshots/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Excepciones: conservar la estructura de carpetas vacias en git
+!downloads/.gitkeep
+!logs/.gitkeep
+!screenshots/.gitkeep
+!playwright/.auth/.gitkeep

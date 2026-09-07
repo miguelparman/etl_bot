@@ -1,0 +1,8 @@
+# bot_extraccion (203_bot_notas_de_credito): exporta "Detalle NC" desde Power BI
+playwright>=1.62
+python-dotenv>=1.0
+
+# etl_carga (03_Notas_de_credito): carga el Excel exportado a SQL Server
+polars>=1.9
+fastexcel>=0.11
+pyodbc>=5.1

@@ -1,0 +1,21 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: termometro_sqlserver_test
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${SA_PASSWORD:-Termometro_Test_2026!}"
+      MSSQL_PID: "Developer"
+    ports:
+      - "14330:1433"   # puerto distinto al default 1433, para no chocar con un SQL Server local existente
+    volumes:
+      - sqlserver_test_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"${SA_PASSWORD:-Termometro_Test_2026!}\" -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  sqlserver_test_data:

@@ -1,0 +1,36 @@
+-- Origen SSIS: Execute SQL Task "TBL_ISN" (dentro de "TBL_ISN"), se ejecuta ANTES del Data Flow "EXPORT CSV"
+-- Conexion original: 162.CL_ISN
+SELECT [FECHA_EVENTO]
+      ,[HORA_EVENTO]
+      ,[ANI_EVENTO]
+      ,[ANI_CONTACTO]
+      ,[ID_PROVEEDOR]
+      ,[ENCUESTA]
+      ,[NEGOCIO]
+      ,[PROCESO_NIVEL1]
+      ,[PROCESO_NIVEL2]
+      ,[PROCESO_NIVEL3]
+      ,[PROCESO_NIVEL4]
+      ,[PROCESO_NIVEL5]
+      ,[EMPRESA]
+      ,[ZONA]
+      ,[REGION]
+      ,[COMUNA]
+      ,[AGENCIA]
+      ,[SUBSEGMENTO]
+      ,[TIPO_CONTRATO]
+      ,[PRODUCTO]
+      ,[TECNOLOGIA]
+      ,[RUT_CLIENTE]
+      ,[NOMBRE_CLIENTE]
+      ,[RUT_EJECUTIVO]
+      ,[NOMBRE_EJECUTIVO]
+      ,[RUT_TECNICO]
+      ,[NOMBRE_TECNICO]
+      ,[PCRC]
+INTO
+	[CL_ISN].[dbo].[TBL_ISN]
+FROM
+	[CL_ISN].[dbo].[TBL_ISN_PRE]
+WHERE
+	Indice = 1

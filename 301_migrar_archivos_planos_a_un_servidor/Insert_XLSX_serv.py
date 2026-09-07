@@ -1,0 +1,135 @@
+import pandas as pd
+import pyodbc
+import os
+import numpy as np
+
+# ==============================
+# CONFIGURACIÓN
+# ==============================
+
+RUTA_XLSX  = r"D:\Descargas\Prueba\Perdida_Real_9333_clientes.xlsx"
+HOJA       = "Hoja1"
+SERVER     = "172.17.0.162"
+DATABASE   = "CL_PRUEBA"
+USUARIO    = "mparedes"
+PASSWORD   = "Abr2024."
+TABLA      = "tbl_Perdida_Real_9333_clientes"
+
+# ==============================
+# FUNCIONES
+# ==============================
+
+def map_dtype(series):
+    """Mapea el dtype de una columna pandas a su equivalente en SQL Server."""
+    dtype = str(series.dtype)
+
+    if "int" in dtype:
+        max_val = series.dropna().abs().max() if len(series.dropna()) > 0 else 0
+        return "BIGINT" if max_val > 2_147_483_647 else "INT"
+
+    elif "float" in dtype:
+        return "FLOAT"
+
+    elif "datetime" in dtype:
+        return "DATETIME"
+
+    elif "bool" in dtype:
+        return "BIT"
+
+    else:
+        # Columna de texto — calcular longitud máxima real
+        max_len = series.dropna().astype(str).str.len().max()
+        if pd.isna(max_len) or max_len == 0:
+            max_len = 50
+        if max_len > 2000:
+            return "NVARCHAR(MAX)"
+        return f"NVARCHAR({int(max_len) + 10})"
+
+
+def leer_xlsx(ruta, hoja):
+    if not os.path.exists(ruta):
+        raise FileNotFoundError(f"No se encontró el archivo: {ruta}")
+
+    df = pd.read_excel(ruta, sheet_name=hoja, engine="openpyxl")
+
+    # Normalizar nombres de columnas (sin espacios ni caracteres problemáticos)
+    df.columns = [str(c).strip() for c in df.columns]
+
+    # Reemplazar cadenas vacías y NaN por None (NULL en SQL)
+    df = df.replace(r'^\s*$', None, regex=True)
+    df = df.where(pd.notnull(df), None)
+
+    print(f"Filas leídas: {len(df)} | Columnas: {list(df.columns)}")
+    return df
+
+
+def crear_tabla(cursor, df, tabla):
+    cols_sql = []
+    print("\nMapeo de tipos detectados:")
+
+    for col in df.columns:
+        tipo_sql = map_dtype(df[col])
+        cols_sql.append(f"[{col}] {tipo_sql}")
+        print(f"  {col:40s} -> {tipo_sql}")
+
+    ddl = f"""
+    IF OBJECT_ID('{tabla}', 'U') IS NOT NULL
+        DROP TABLE {tabla};
+
+    CREATE TABLE {tabla} (
+        {',\n        '.join(cols_sql)}
+    );
+    """
+
+    cursor.execute(ddl)
+    print(f"\nTabla '{tabla}' creada correctamente.")
+
+
+def insertar_datos(cursor, df, tabla):
+    cols = ", ".join([f"[{col}]" for col in df.columns])
+    placeholders = ", ".join(["?" for _ in df.columns])
+    insert_sql = f"INSERT INTO {tabla} ({cols}) VALUES ({placeholders})"
+
+    # Convertir a lista de tuplas; los datetime los convierte a native Python
+    data = []
+    for row in df.itertuples(index=False, name=None):
+        fila = []
+        for val in row:
+            if isinstance(val, pd.Timestamp):
+                fila.append(val.to_pydatetime() if not pd.isnull(val) else None)
+            else:
+                fila.append(val)
+        data.append(fila)
+
+    cursor.fast_executemany = True
+    cursor.executemany(insert_sql, data)
+    print(f"{len(data)} filas insertadas en '{tabla}'.")
+
+
+# ==============================
+# FLUJO PRINCIPAL
+# ==============================
+
+def main():
+    conn_str = (
+        "DRIVER={ODBC Driver 17 for SQL Server};"
+        f"SERVER={SERVER};"
+        f"DATABASE={DATABASE};"
+        f"UID={USUARIO};"
+        f"PWD={PASSWORD};"
+        "Encrypt=no;"
+    )
+
+    df = leer_xlsx(RUTA_XLSX, HOJA)
+
+    with pyodbc.connect(conn_str) as conn:
+        with conn.cursor() as cursor:
+            crear_tabla(cursor, df, TABLA)
+            insertar_datos(cursor, df, TABLA)
+            conn.commit()
+
+    print("\nProceso finalizado con éxito.")
+
+
+if __name__ == "__main__":
+    main()

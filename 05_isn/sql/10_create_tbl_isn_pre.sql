@@ -1,0 +1,124 @@
+-- Origen SSIS: Execute SQL Task "TBL_ISN_PRE" (dentro de "TBL_ISN_PRE")
+-- Conexion original: 162.CL_ISN
+-- Filtra candidatos elegibles para encuesta (MOTIVO DE RETIRO IS NULL, primera fila por caso),
+-- formatea RUT/ANI para el proveedor de encuestas y deduplica por RUT_CLIENTE.
+;WITH CTE_REITERADOS AS
+(
+-- CORREO
+SELECT
+	REPLACE([FECHA],'-','') [FECHA_EVENTO]
+    ,[HORA] [HORA_EVENTO]
+	,'56'+[ANI] [ANI_EVENTO]
+	,'56'+[ANI] [ANI_CONTACTO]
+	,REPLACE([FECHA],'-','')+'56'+[ANI] [ID_PROVEEDOR]
+	,'EMPRESA' [ENCUESTA]
+	,NULL [NEGOCIO]
+	,'COMERCIAL' [PROCESO_NIVEL1]
+    ,'COMERCIAL' [PROCESO_NIVEL2]
+    ,1 [PROCESO_NIVEL3]
+    ,1 [PROCESO_NIVEL4]
+    ,NULL [PROCESO_NIVEL5]
+	,'FRACTALIA' [EMPRESA]
+	,NULL [ZONA]
+    ,NULL [REGION]
+    ,NULL [COMUNA]
+    ,NULL [AGENCIA]
+	,[SUB_SEGMENTO] [SUBSEGMENTO]
+	,'POST PAGO' [TIPO_CONTRATO]
+	,NULL [PRODUCTO]
+    ,NULL [TECNOLOGIA]
+	,RIGHT('0000000000'+ REPLACE([No. identificación fiscal],'-',''),10) [RUT_CLIENTE]
+	,[NOMBRE_CLIENTE]
+	,RIGHT('0000000000'+ REPLACE([RUT SM CARTERA],'-',''),10) [RUT_EJECUTIVO]
+	,[NOMBRE SM CARTERA] [NOMBRE_EJECUTIVO]
+	,NULL [RUT_TECNICO]
+    ,NULL [NOMBRE_TECNICO]
+    ,NULL [PCRC]
+	,BASE
+	,[Número del caso]
+	,'No' [REFERIDO]
+FROM
+	[CL_ISN].[dbo].[TBL_ISN_SF]
+WHERE
+	[MOTIVO DE RETIRO] IS NULL
+	AND ORDEN = 1
+
+--UNION ALL
+
+---- CLIENTES PROMOTORES
+--SELECT
+--	[FECHA_EVENTO]
+--    ,[HORA_EVENTO]
+--    ,[ANI_EVENTO]
+--    ,[ANI_CONTACTO]
+--    ,[ID_PROVEEDOR]
+--    ,[ENCUESTA]
+--    ,[NEGOCIO]
+--    ,[PROCESO_NIVEL1]
+--    ,[PROCESO_NIVEL2]
+--    ,[PROCESO_NIVEL3]
+--    ,[PROCESO_NIVEL4]
+--    ,[PROCESO_NIVEL5]
+--    ,[EMPRESA]
+--    ,[ZONA]
+--    ,[REGION]
+--    ,[COMUNA]
+--    ,[AGENCIA]
+--    ,[SUBSEGMENTO]
+--    ,[TIPO_CONTRATO]
+--    ,[PRODUCTO]
+--    ,[TECNOLOGIA]
+--    ,[RUT_CLIENTE]
+--	,[NOMBRE_CLIENTE]
+--	,[RUT_EJECUTIVO]
+--	,[NOMBRE_EJECUTIVO]
+--    ,[RUT_TECNICO]
+--    ,[NOMBRE_TECNICO]
+--    ,[PCRC]
+--    ,[BASE]
+--    ,[Número del caso]
+--    ,'Si' [REFERIDO]
+--FROM
+--	[CL_ISN].[dbo].[TBL_ISN_PROMOTOR]
+--WHERE
+--	[MOTIVO DE RETIRO] IS NULL
+
+)
+
+SELECT
+	[FECHA_EVENTO]
+    ,[HORA_EVENTO]
+    ,[ANI_EVENTO]
+    ,[ANI_CONTACTO]
+    ,[ID_PROVEEDOR]
+    ,[ENCUESTA]
+    ,[NEGOCIO]
+    ,[PROCESO_NIVEL1]
+    ,[PROCESO_NIVEL2]
+    ,[PROCESO_NIVEL3]
+    ,[PROCESO_NIVEL4]
+    ,[PROCESO_NIVEL5]
+    ,[EMPRESA]
+    ,[ZONA]
+    ,[REGION]
+    ,[COMUNA]
+    ,[AGENCIA]
+    ,[SUBSEGMENTO]
+    ,[TIPO_CONTRATO]
+    ,[PRODUCTO]
+    ,[TECNOLOGIA]
+    ,[RUT_CLIENTE]
+	,[NOMBRE_CLIENTE]
+	,[RUT_EJECUTIVO]
+	,[NOMBRE_EJECUTIVO]
+    ,[RUT_TECNICO]
+    ,[NOMBRE_TECNICO]
+    ,[PCRC]
+    ,[BASE]
+    ,[Número del caso]
+    ,[REFERIDO]
+	,ROW_NUMBER() OVER(PARTITION BY RUT_CLIENTE ORDER BY RUT_CLIENTE,FECHA_EVENTO,HORA_EVENTO) [Indice]
+INTO
+	[CL_ISN].[dbo].[TBL_ISN_PRE]
+FROM
+	CTE_REITERADOS

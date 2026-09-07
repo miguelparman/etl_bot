@@ -1,0 +1,9 @@
+.env
+bot_extraccion/.env
+etl_carga/.env
+**/__pycache__/
+*.pyc
+*.log
+bot_extraccion/playwright_profile/
+bot_extraccion/screenshots/
+bot_extraccion/descargas_temp/
