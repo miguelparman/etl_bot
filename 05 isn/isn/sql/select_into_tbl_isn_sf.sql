@@ -1,7 +1,11 @@
 -- Tarea 'SF\TBL_ISN_SF', conexión 162.CL_ISN.
--- Parámetros originales '?','?' (posicionales) = User::Fecha_inicio,
--- User::Fecha_fin -- convertidos a nombrados :fecha_inicio/:fecha_fin para
--- pyodbc/SQLAlchemy (db.run_sql_file(..., params={"fecha_inicio":..., "fecha_fin":...})).
+-- Los parámetros posicionales originales del .dtsx (User Fecha_inicio y
+-- User Fecha_fin) se pasan acá como parámetros nombrados en el WHERE de
+-- más abajo -- ver isn/pipeline.py, db.run_sql_file(..., params={...}).
+-- OJO: no repetir esos nombres de parámetro en comentarios de este archivo
+-- con el prefijo de dos puntos ni usar el caracter de interrogación suelto:
+-- SQLAlchemy los cuenta como referencias de parámetro reales aunque estén
+-- dentro de un comentario SQL, y duplica/descuadra la lista de valores.
 SELECT
 	ROW_NUMBER() OVER(PARTITION BY x0.[Número del caso] ORDER BY x0.[Número del caso], x0.[ANI]) ORDEN
 	,x0.*
