@@ -9,9 +9,10 @@ import logging
 
 import pandas as pd
 
-from app.application import mappings, sql
-from app.application.ports import DatabaseGateway
-from app.domain.exceptions import CargaError
+import mappings
+import sql
+from db import DatabaseGateway
+from exceptions import CargaError
 
 logger = logging.getLogger("cartera")
 

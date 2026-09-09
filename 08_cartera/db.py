@@ -1,9 +1,10 @@
-"""Adaptador de infraestructura: implementa el puerto DatabaseGateway
-(app/application/ports.py) sobre una conexion pyodbc a SQL Server.
+"""Acceso a SQL Server: fabrica de conexiones (pyodbc) y el gateway que usan
+extraction.py/validation.py/transformation.py/load.py para ejecutar scripts,
+truncar, insertar y leer tablas.
 
-Una instancia de esta clase equivale a un Connection Manager OLE DB del
+Una instancia de DatabaseGateway equivale a un Connection Manager OLE DB del
 paquete original: el pipeline usa dos (una para CL_CARTERA, otra para
-CL_TEMPORALES), cada una con su propia conexion.
+CL_TEMPORALES), cada una con su propia conexion -- igual que en el .dtsx.
 """
 
 from __future__ import annotations
@@ -14,19 +15,38 @@ from typing import Any, Sequence
 import pandas as pd
 import pyodbc
 
-from app.domain.exceptions import CargaError
+from config import DbSettings
+from exceptions import CargaError
 
 logger = logging.getLogger("cartera")
 
 
-class SqlServerGateway:
-    """Implementa el puerto DatabaseGateway (app/application/ports.py)."""
+def crear_conexion(settings: DbSettings) -> pyodbc.Connection:
+    conn_str = (
+        f"DRIVER={{{settings.driver}}};"
+        f"SERVER={settings.server};"
+        f"DATABASE={settings.database};"
+        f"UID={settings.user};"
+        f"PWD={settings.password};"
+        f"Encrypt={settings.encrypt};"
+        f"TrustServerCertificate={settings.trust_server_certificate}"
+    )
+    return pyodbc.connect(conn_str)
+
+
+class DatabaseGateway:
+    """Envuelve una conexion pyodbc con las operaciones que el pipeline
+    necesita (equivalentes a las tareas Execute SQL / Data Flow del paquete
+    original que corren sobre un Connection Manager)."""
 
     def __init__(self, conn: pyodbc.Connection, batch_size: int = 5000) -> None:
         self._conn = conn
         self._batch_size = batch_size
 
     def execute_script(self, sql: str, params: Sequence[Any] | None = None) -> None:
+        """Ejecuta un script T-SQL completo (una o mas sentencias, sin 'GO')
+        como un unico batch. Equivalente a un Execute SQL Task simple o
+        multi-sentencia del paquete original."""
         try:
             cursor = self._conn.cursor()
             try:
@@ -42,6 +62,9 @@ class SqlServerGateway:
             raise CargaError(f"Fallo la ejecucion del script T-SQL: {exc}") from exc
 
     def fetch_scalar(self, sql: str, params: Sequence[Any] | None = None) -> Any:
+        """Ejecuta una consulta escalar (p.ej. SELECT COUNT(*) ...) y
+        devuelve el primer valor de la primera fila. Equivalente a evaluar la
+        condicion de un 'IF EXISTS (...)' del paquete original."""
         try:
             cursor = self._conn.cursor()
             try:
@@ -54,10 +77,13 @@ class SqlServerGateway:
             raise CargaError(f"Fallo la consulta escalar: {exc}") from exc
 
     def truncate_table(self, table: str, schema: str = "dbo") -> None:
+        """Equivalente a un Execute SQL Task 'TRUNCATE TABLE [schema].[table]'."""
         self.execute_script(f"TRUNCATE TABLE [{schema}].[{table}]")
         logger.info("Tabla [%s].[%s] truncada.", schema, table)
 
     def bulk_insert(self, table: str, df: pd.DataFrame, schema: str = "dbo") -> int:
+        """Equivalente a un OLE DB Destination en modo fast-load. Devuelve la
+        cantidad de filas insertadas."""
         if df.empty:
             logger.warning("bulk_insert: DataFrame vacio para [%s].[%s], no se inserta nada", schema, table)
             return 0
@@ -92,6 +118,8 @@ class SqlServerGateway:
             raise CargaError(f"No se pudieron insertar filas en [{schema}].[{table}]: {exc}") from exc
 
     def read_table(self, table: str, schema: str = "dbo") -> pd.DataFrame:
+        """Lee una tabla completa. Equivalente a un OLE DB Source en modo
+        tabla (AccessMode=0)."""
         try:
             cursor = self._conn.cursor()
             try:

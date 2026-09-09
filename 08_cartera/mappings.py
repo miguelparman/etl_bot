@@ -13,7 +13,10 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 TABLA_STAGING = "TBL_CARTERA"  # CL_TEMPORALES.dbo.TBL_CARTERA
 TABLA_ACTUAL = "TBL_CARTERA_ACTUAL"  # CL_CARTERA.dbo.TBL_CARTERA_ACTUAL
-TABLA_HISTORIAL = "TBL_HISTORIAL_CARTERA"  # CL_CARTERA.dbo.TBL_HISTORIAL_CARTERA
+# TBL_HISTORIAL_CARTERA (CL_CARTERA.dbo) no tiene constante propia: solo se
+# referencia dentro de las sentencias T-SQL literales de sql.py, nunca desde
+# codigo Python (a diferencia de TABLA_STAGING/TABLA_ACTUAL, que sirven de
+# parametro a load.py).
 
 # ---------------------------------------------------------------------------
 # Data Flow 1: Origen de Excel 'CARTERA' (Connection Manager EXCEL)
@@ -56,6 +59,13 @@ EXCEL_COLUMNS: tuple[str, ...] = (
 # datos' (nunca se les crea una columna de salida "Copy of ..."): no llegan a
 # la tabla de staging.
 EXCEL_COLUMNS_DESCARTADAS: tuple[str, ...] = ("RUTCLI", "RUT10")
+
+# Columna cuyo truncamiento en el componente 'Conversion de datos' tiene
+# errorRowDisposition="IgnoreFailure" en el .dtsx original: si excede el
+# ancho, se trunca en silencio. Todas las demas columnas de
+# TRUNCATION_LENGTHS tienen errorRowDisposition="FailComponent": si el valor
+# excede el ancho, SSIS aborta el Data Flow en vez de truncar.
+TRUNCATION_TOLERANT_COLUMN = "NOMCLI"
 
 # Anchos de truncamiento del componente 'Conversion de datos' (WSTR(255) ->
 # STR(n)). OJO: 'SEGME' se trunca a 30 en el paquete original aunque la

@@ -1,4 +1,4 @@
-"""Modelos de dominio: value objects sin dependencias externas."""
+"""Value objects del proceso de Cartera, sin dependencias externas."""
 
 from __future__ import annotations
 

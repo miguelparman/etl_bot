@@ -1,6 +1,7 @@
 import pandas as pd
 
-from app.application import load, mappings
+import load
+import mappings
 from tests.unit.fakes import FakeDatabaseGateway
 
 

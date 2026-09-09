@@ -1,8 +1,11 @@
-"""Dobles de prueba (fakes) para los puertos de la capa application.
+"""Dobles de prueba (fakes) para DatabaseGateway (db.py) y SpreadsheetReader
+(spreadsheet.py).
 
 Permiten testear el pipeline sin una base de datos ni un archivo Excel
 reales, registrando las llamadas para poder aseverar el orden/contenido --
-igual que en los demas proyectos migrados de este repositorio.
+igual que en los demas proyectos migrados de este repositorio. No heredan de
+las clases concretas: Python no lo exige (duck typing) y evita acoplar los
+fakes a la implementacion real.
 """
 
 from __future__ import annotations

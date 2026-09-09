@@ -1,9 +1,8 @@
 """Orquestador del pipeline de Cartera.
 
-Migracion de CL_Proc_Carga_Cartera.dtsx. Orquesta unicamente los puertos
-definidos en application/ports.py y las funciones de application/extraction.py,
-validation.py, transformation.py y load.py -- no conoce pyodbc, pandas.read_excel
-concreto ni ningun otro detalle de infrastructure/.
+Migracion de CL_Proc_Carga_Cartera.dtsx. Llama en orden a los componentes de
+extraction.py, validation.py, transformation.py y load.py -- no conoce
+pyodbc, pandas.read_excel concreto ni ningun otro detalle de db.py/spreadsheet.py.
 
 Control Flow original (3 Sequence Containers encadenados "On Success", sin
 ramas condicionales ni expresiones -- ver el analisis del .dtsx para el
@@ -28,11 +27,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from app.application import load, transformation, validation
-from app.application.extraction import CarteraExcelExtractor
-from app.application.ports import DatabaseGateway, SpreadsheetReader
-from app.domain.exceptions import PipelineError
-from app.domain.models import Periodo, ResultadoPipeline
+import load
+import transformation
+import validation
+from db import DatabaseGateway
+from exceptions import PipelineError
+from extraction import CarteraExcelExtractor
+from models import Periodo, ResultadoPipeline
+from spreadsheet import SpreadsheetReader
 
 logger = logging.getLogger("cartera")
 

@@ -3,10 +3,11 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from app.application import mappings, sql
-from app.application.pipeline import CarteraPipeline
-from app.domain.exceptions import PipelineError, ValidacionError
-from app.domain.models import Periodo
+import mappings
+import sql
+from exceptions import PipelineError, ValidacionError
+from models import Periodo
+from pipeline import CarteraPipeline
 from tests.unit.fakes import FakeDatabaseGateway, FakeSpreadsheetReader
 
 
@@ -51,12 +52,18 @@ def test_pipeline_ejecuta_las_3_sequences_en_orden_y_carga_las_tablas_esperadas(
     assert db_cartera.truncated_tables[0] == mappings.TABLA_ACTUAL
     assert mappings.TABLA_ACTUAL in db_cartera.inserted
 
-    # HISTORICO CARTERA
+    # HISTORICO CARTERA: el orden real del Sequence Container es
+    # ACTUALIZA STATUS -> LIMITA CLIENTES -> LIMPIA TEMPORAL -> CARGA (la
+    # tarea CARGA corre despues de que LIMPIA TEMPORAL vacia la staging).
+    # Se verifica el orden exacto, no solo la presencia, para proteger contra
+    # una regresion que reordene los pasos en pipeline.py.
     scripts_cartera = [s for s, _ in db_cartera.executed_scripts]
-    assert sql.ACTUALIZA_STATUS_TEMP_CARTERA in scripts_cartera
-    assert sql.LIMITA_CLIENTES in scripts_cartera
-    assert sql.LIMPIA_TEMPORAL in scripts_cartera
-    assert sql.CARGA_HISTORICO in scripts_cartera
+    assert scripts_cartera == [
+        sql.ACTUALIZA_STATUS_TEMP_CARTERA,
+        sql.LIMITA_CLIENTES,
+        sql.LIMPIA_TEMPORAL,
+        sql.CARGA_HISTORICO,
+    ]
 
     # LIMITA CLIENTES debe recibir fecha_inicio del periodo como parametro.
     limita_params = next(p for s, p in db_cartera.executed_scripts if s == sql.LIMITA_CLIENTES)

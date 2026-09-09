@@ -1,4 +1,4 @@
-"""Adaptador de infraestructura: configuracion de logging (archivo + consola)."""
+"""Configuracion de logging (archivo + consola)."""
 
 from __future__ import annotations
 

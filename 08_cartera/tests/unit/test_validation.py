@@ -1,9 +1,9 @@
 import pytest
 
-from app.application import sql
-from app.application.validation import validar_cartera_temporal
-from app.domain.exceptions import ValidacionError
+import sql
+from exceptions import ValidacionError
 from tests.unit.fakes import FakeDatabaseGateway
+from validation import validar_cartera_temporal
 
 
 def test_validar_no_falla_si_los_4_controles_pasan():

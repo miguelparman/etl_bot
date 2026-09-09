@@ -2,10 +2,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from app.application import mappings
-from app.application.extraction import CarteraExcelExtractor
-from app.domain.exceptions import ExtraccionError
-from app.domain.models import Periodo
+import mappings
+from exceptions import ExtraccionError
+from extraction import CarteraExcelExtractor
+from models import Periodo
 from tests.unit.fakes import FakeSpreadsheetReader
 
 
@@ -39,14 +39,41 @@ def test_extraer_descarta_rutcli_y_rut10():
     assert "RUT10" not in resultado.columns
 
 
-def test_extraer_trunca_segme_a_30_caracteres():
+def test_extraer_falla_si_segme_excede_su_ancho_de_truncamiento():
+    # Componente 'Conversion de datos': SEGME tiene errorRowDisposition=
+    # "FailComponent" en el .dtsx original -- un valor que excede el ancho
+    # (30) debe abortar la extraccion, no truncarse en silencio.
     valor_largo = "S" * 100
     df = pd.DataFrame([_fila_excel(SEGME=valor_largo)])
     extractor = _build_extractor(df)
 
+    try:
+        extractor.extraer(Periodo(fecha_inicio=20260101, fecha_fin=20260201))
+        assert False, "se esperaba ExtraccionError"
+    except ExtraccionError as exc:
+        assert "SEGME" in str(exc)
+
+
+def test_extraer_trunca_segme_en_silencio_si_no_excede_el_ancho():
+    valor_corto = "S" * 30
+    df = pd.DataFrame([_fila_excel(SEGME=valor_corto)])
+    extractor = _build_extractor(df)
+
     resultado = extractor.extraer(Periodo(fecha_inicio=20260101, fecha_fin=20260201))
 
-    assert resultado.loc[0, "SEGME"] == valor_largo[:30]
+    assert resultado.loc[0, "SEGME"] == valor_corto
+
+
+def test_extraer_trunca_nomcli_en_silencio_aunque_exceda_su_ancho():
+    # NOMCLI es la unica columna con errorRowDisposition="IgnoreFailure" en
+    # el componente 'Conversion de datos' original: se trunca sin abortar.
+    valor_largo = "N" * 200
+    df = pd.DataFrame([_fila_excel(NOMCLI=valor_largo)])
+    extractor = _build_extractor(df)
+
+    resultado = extractor.extraer(Periodo(fecha_inicio=20260101, fecha_fin=20260201))
+
+    assert resultado.loc[0, "NOMCLI"] == valor_largo[:100]
 
 
 def test_extraer_agrega_fecha_inicio_y_fecha_fin_del_periodo():

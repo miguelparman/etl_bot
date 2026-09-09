@@ -3,24 +3,29 @@ la cartera de clientes vigente (Chile) desde un Excel mantenido manualmente
 hacia SQL Server, con reclasificacion de estado (NUEVO/SE MANTIENE/REINGRESO)
 contra el historico.
 
-Flujo (equivalente a los 3 Sequence Containers del .dtsx -- ver
-app/application/pipeline.py para el detalle completo):
+Flujo (equivalente a los 3 Sequence Containers del .dtsx -- ver pipeline.py
+para el detalle completo):
 
     CARGA CARTERA TEMPORAL -> CARGA CARTERA ACTUAL -> HISTORICO CARTERA
 
-Arquitectura (Clean/Layered):
-    app/domain/          Entidades (Periodo, ResultadoPipeline) y excepciones.
-                          Sin dependencias externas.
-    app/application/     Puertos (interfaces), y los 4 pasos del proceso
-                          separados por responsabilidad -- extraction.py,
-                          validation.py, transformation.py, load.py -- mas
-                          pipeline.py, que los orquesta en el mismo orden que
-                          el Control Flow original.
-    app/infrastructure/  Implementaciones concretas: Excel (pandas), SQL
-                          Server (pyodbc), .env, logging.
-    main.py (este archivo) Composition root: arma las piezas concretas de
-                          infrastructure/ y las inyecta en CarteraPipeline.
-                          Es el unico punto que conoce ambas capas a la vez.
+Arquitectura (modular por componentes, un archivo = una responsabilidad):
+    models.py, exceptions.py   Value objects (Periodo, ResultadoPipeline) y
+                                excepciones. Sin dependencias externas.
+    mappings.py, sql.py        Constantes de negocio: columnas/tablas/anchos
+                                de truncamiento, y las sentencias T-SQL
+                                migradas literalmente de cada Execute SQL Task.
+    extraction.py               Extraccion: Excel -> DataFrame saneado.
+    validation.py                Validacion: los 4 controles de la tarea 'VALIDA'.
+    transformation.py            Transformacion: CARGA DNI, ACTUALIZA STATUS,
+                                LIMITA CLIENTES, LIMPIA TEMPORAL.
+    load.py                     Carga: truncados, inserts y copia entre bases.
+    pipeline.py                  Orquestador: llama a los 4 pasos anteriores en
+                                el orden del Control Flow original.
+    db.py, spreadsheet.py       Adaptadores concretos: pyodbc (SQL Server) y
+                                pandas/openpyxl (Excel).
+    config.py, logging_setup.py Configuracion via '.env' y logging.
+    main.py (este archivo)      Composition root: arma db.py/spreadsheet.py y
+                                los pasa a CarteraPipeline.
 
 Configuracion:
     Los valores se leen del archivo '.env' (junto a este script; ver
@@ -44,16 +49,15 @@ import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(BASE_DIR))  # permite 'import app.xxx' al correr como script suelto
+sys.path.insert(0, str(BASE_DIR))  # permite 'import mappings', 'import sql', etc. al correr como script suelto
 
-from app.application.pipeline import CarteraPipeline
-from app.domain.exceptions import CarteraError, PipelineError, ValidacionError
-from app.domain.models import Periodo, hoy_yyyymmdd
-from app.infrastructure.config import cargar_configuracion
-from app.infrastructure.db import crear_conexion
-from app.infrastructure.logging_setup import NOMBRE_LOGGER, configurar_logging
-from app.infrastructure.spreadsheet_reader import PandasExcelReader
-from app.infrastructure.sqlserver_gateway import SqlServerGateway
+from config import cargar_configuracion
+from db import DatabaseGateway, crear_conexion
+from exceptions import CarteraError, PipelineError, ValidacionError
+from logging_setup import NOMBRE_LOGGER, configurar_logging
+from models import Periodo, hoy_yyyymmdd
+from pipeline import CarteraPipeline
+from spreadsheet import SpreadsheetReader
 
 logger = logging.getLogger(NOMBRE_LOGGER)
 
@@ -92,9 +96,9 @@ def main() -> int:
         conn_temporales = crear_conexion(settings.db_temporales)
 
         pipeline = CarteraPipeline(
-            db_cartera=SqlServerGateway(conn_cartera, settings.batch_size),
-            db_temporales=SqlServerGateway(conn_temporales, settings.batch_size),
-            spreadsheet_reader=PandasExcelReader(),
+            db_cartera=DatabaseGateway(conn_cartera, settings.batch_size),
+            db_temporales=DatabaseGateway(conn_temporales, settings.batch_size),
+            spreadsheet_reader=SpreadsheetReader(),
             excel_path=settings.excel_path,
         )
         resultado = pipeline.run(periodo)

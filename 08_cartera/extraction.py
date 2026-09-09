@@ -2,9 +2,8 @@
 componentes 'Origen de Excel' + 'Conversion de datos' + 'Columna derivada'
 (el cuarto componente, el Destino OLE DB, es responsabilidad de load.py).
 
-No conoce pyodbc ni pandas.read_excel concreto -- solo el puerto
-SpreadsheetReader (application/ports.py) y las reglas de saneo/tipado, que
-son logica de negocio (los anchos de truncamiento y las columnas
+Solo conoce SpreadsheetReader (spreadsheet.py) y las reglas de saneo/tipado,
+que son logica de negocio (los anchos de truncamiento y las columnas
 descartadas son parte del proceso original, no un detalle tecnico de
 lectura de archivos).
 """
@@ -16,10 +15,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from app.application import mappings
-from app.application.ports import SpreadsheetReader
-from app.domain.exceptions import ExtraccionError
-from app.domain.models import Periodo
+import mappings
+from exceptions import ExtraccionError
+from models import Periodo
+from spreadsheet import SpreadsheetReader
 
 logger = logging.getLogger("cartera")
 
@@ -59,10 +58,28 @@ class CarteraExcelExtractor:
         return df.drop(columns=list(mappings.EXCEL_COLUMNS_DESCARTADAS))
 
     def _truncar(self, df: pd.DataFrame) -> pd.DataFrame:
+        # Componente 'Conversion de datos': errorRowDisposition="FailComponent"
+        # para todas las columnas salvo NOMCLI (IgnoreFailure). Un valor que
+        # excede el ancho debe abortar la extraccion igual que en el .dtsx
+        # original, no truncarse en silencio.
         try:
+            df = df.copy()
             for columna, largo in mappings.TRUNCATION_LENGTHS.items():
-                df[columna] = df[columna].astype("string").str.slice(0, largo)
+                valores = df[columna].astype("string")
+                if columna != mappings.TRUNCATION_TOLERANT_COLUMN:
+                    excede = valores.str.len() > largo
+                    if excede.any():
+                        filas = df.index[excede].tolist()
+                        raise ExtraccionError(
+                            f"La columna '{columna}' excede el ancho de truncamiento "
+                            f"({largo} caracteres) en las filas {filas}; el componente "
+                            "'Conversion de datos' original aborta el Data Flow en este caso "
+                            "(errorRowDisposition=FailComponent)."
+                        )
+                df[columna] = valores.str.slice(0, largo)
             return df
+        except ExtraccionError:
+            raise
         except Exception as exc:
             raise ExtraccionError(f"No se pudieron tipar/truncar las columnas: {exc}") from exc
 

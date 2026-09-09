@@ -1,5 +1,5 @@
-"""Excepciones de dominio. No dependen de pyodbc, pandas ni ninguna otra
-libreria externa."""
+"""Excepciones del proceso de Cartera. No dependen de pyodbc, pandas ni
+ninguna otra libreria externa."""
 
 from __future__ import annotations
 

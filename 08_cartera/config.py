@@ -1,6 +1,6 @@
-"""Adaptador de infraestructura: arma la configuracion a partir de variables
-de entorno (archivo '.env'), con valores por defecto no sensibles si no
-estan definidas. Ninguna credencial vive en el codigo ni en este repositorio.
+"""Arma la configuracion a partir de variables de entorno (archivo '.env'),
+con valores por defecto no sensibles si no estan definidas. Ninguna
+credencial vive en el codigo ni en este repositorio.
 
 Equivalente a los 3 Connection Managers y a la variable User::Fecha_Inicio de
 CL_Proc_Carga_Cartera.dtsx.
@@ -14,7 +14,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from app.domain.exceptions import CarteraError
+from exceptions import CarteraError
 
 
 @dataclass(frozen=True)

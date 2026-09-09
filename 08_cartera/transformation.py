@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import logging
 
-from app.application import sql
-from app.application.ports import DatabaseGateway
-from app.domain.exceptions import CargaError
+import sql
+from db import DatabaseGateway
+from exceptions import CargaError
 
 logger = logging.getLogger("cartera")
 
