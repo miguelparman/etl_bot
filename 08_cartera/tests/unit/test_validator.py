@@ -3,7 +3,7 @@ import pytest
 import sql
 from exceptions import ValidacionError
 from tests.unit.fakes import FakeDatabaseGateway
-from validation import validar_cartera_temporal
+from validacion.validator import validar_cartera_temporal
 
 
 def test_validar_no_falla_si_los_4_controles_pasan():

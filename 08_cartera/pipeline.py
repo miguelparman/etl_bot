@@ -1,7 +1,7 @@
 """Orquestador del pipeline de Cartera.
 
-Migracion de CL_Proc_Carga_Cartera.dtsx. Llama en orden a los componentes de
-extraction.py, validation.py, transformation.py y load.py -- no conoce
+Migracion de CL_Proc_Carga_Cartera.dtsx. Llama en orden a las 4 capas del
+proceso -- extraccion/, validacion/, transformacion/ y carga/ -- no conoce
 pyodbc, pandas.read_excel concreto ni ningun otro detalle de db.py/spreadsheet.py.
 
 Control Flow original (3 Sequence Containers encadenados "On Success", sin
@@ -27,14 +27,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-import load
-import transformation
-import validation
+from carga import loader
 from db import DatabaseGateway
 from exceptions import PipelineError
-from extraction import CarteraExcelExtractor
+from extraccion import extractor
 from models import Periodo, ResultadoPipeline
 from spreadsheet import SpreadsheetReader
+from transformacion import transformer
+from validacion import validator
 
 logger = logging.getLogger("cartera")
 
@@ -53,48 +53,47 @@ class CarteraPipeline:
 
     def run(self, periodo: Periodo) -> ResultadoPipeline:
         logger.info("[Cartera] Inicio del pipeline (periodo=%s)", periodo)
-        extractor = CarteraExcelExtractor(self.spreadsheet_reader, self.excel_path)
 
         df_extraido = self._step(
             "CARGA CARTERA TEMPORAL / extraccion Excel",
-            lambda: extractor.extraer(periodo),
+            lambda: extractor.extraer(self.spreadsheet_reader, self.excel_path, periodo),
         )
 
-        self._step("CARGA CARTERA TEMPORAL / TRUNCA TABLA", lambda: load.truncar_staging(self.db_temporales))
+        self._step("CARGA CARTERA TEMPORAL / TRUNCA TABLA", lambda: loader.truncar_staging(self.db_temporales))
         filas_staging = self._step(
             "CARGA CARTERA TEMPORAL / Data Flow 'CL_TEMPORALES TBL_CARTERA'",
-            lambda: load.cargar_staging(self.db_temporales, df_extraido),
+            lambda: loader.cargar_staging(self.db_temporales, df_extraido),
         )
         self._step(
             "CARGA CARTERA TEMPORAL / CARGA DNI",
-            lambda: transformation.enriquecer_con_asesores(self.db_temporales),
+            lambda: transformer.enriquecer_con_asesores(self.db_temporales),
         )
         self._step(
             "CARGA CARTERA TEMPORAL / VALIDA",
-            lambda: validation.validar_cartera_temporal(self.db_temporales),
+            lambda: validator.validar_cartera_temporal(self.db_temporales),
         )
 
-        self._step("CARGA CARTERA ACTUAL / TRUNCA TABLA", lambda: load.truncar_actual(self.db_cartera))
+        self._step("CARGA CARTERA ACTUAL / TRUNCA TABLA", lambda: loader.truncar_actual(self.db_cartera))
         filas_actual = self._step(
             "CARGA CARTERA ACTUAL / Data Flow 'ALIMENTA TABLA'",
-            lambda: load.copiar_temporal_a_actual(self.db_temporales, self.db_cartera),
+            lambda: loader.copiar_temporal_a_actual(self.db_temporales, self.db_cartera),
         )
 
         self._step(
             "HISTORICO CARTERA / ACTUALIZA STATUS TEMP CARTERA",
-            lambda: transformation.actualizar_status_historico(self.db_cartera),
+            lambda: transformer.actualizar_status_historico(self.db_cartera),
         )
         self._step(
             "HISTORICO CARTERA / LIMITA CLIENTES",
-            lambda: transformation.limitar_clientes_historico(self.db_cartera, periodo.fecha_inicio),
+            lambda: transformer.limitar_clientes_historico(self.db_cartera, periodo.fecha_inicio),
         )
         self._step(
             "HISTORICO CARTERA / LIMPIA TEMPORAL",
-            lambda: transformation.limpiar_temporal(self.db_cartera),
+            lambda: transformer.limpiar_temporal(self.db_cartera),
         )
         self._step(
             "HISTORICO CARTERA / CARGA",
-            lambda: load.insertar_historico(self.db_cartera),
+            lambda: loader.insertar_historico(self.db_cartera),
         )
 
         resultado = ResultadoPipeline(

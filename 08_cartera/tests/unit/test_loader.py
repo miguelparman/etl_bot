@@ -1,7 +1,7 @@
 import pandas as pd
 
-import load
 import mappings
+from carga import loader
 from tests.unit.fakes import FakeDatabaseGateway
 
 
@@ -19,7 +19,7 @@ def test_copiar_temporal_a_actual_selecciona_y_renombra_columnas():
     db_temporales.tables[mappings.TABLA_STAGING] = _staging_df_completo()
     db_cartera = FakeDatabaseGateway()
 
-    filas = load.copiar_temporal_a_actual(db_temporales, db_cartera)
+    filas = loader.copiar_temporal_a_actual(db_temporales, db_cartera)
 
     assert filas == 1
     df_insertado = db_cartera.inserted[mappings.TABLA_ACTUAL]
@@ -34,8 +34,8 @@ def test_truncar_staging_y_truncar_actual_usan_la_tabla_correcta():
     db_temporales = FakeDatabaseGateway()
     db_cartera = FakeDatabaseGateway()
 
-    load.truncar_staging(db_temporales)
-    load.truncar_actual(db_cartera)
+    loader.truncar_staging(db_temporales)
+    loader.truncar_actual(db_cartera)
 
     assert db_temporales.truncated_tables == [mappings.TABLA_STAGING]
     assert db_cartera.truncated_tables == [mappings.TABLA_ACTUAL]
@@ -45,7 +45,7 @@ def test_cargar_staging_delega_en_bulk_insert():
     db_temporales = FakeDatabaseGateway()
     df = pd.DataFrame([{"RUT_DV": "1"}])
 
-    filas = load.cargar_staging(db_temporales, df)
+    filas = loader.cargar_staging(db_temporales, df)
 
     assert filas == 1
     assert mappings.TABLA_STAGING in db_temporales.inserted

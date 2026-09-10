@@ -8,24 +8,25 @@ para el detalle completo):
 
     CARGA CARTERA TEMPORAL -> CARGA CARTERA ACTUAL -> HISTORICO CARTERA
 
-Arquitectura (modular por componentes, un archivo = una responsabilidad):
-    models.py, exceptions.py   Value objects (Periodo, ResultadoPipeline) y
-                                excepciones. Sin dependencias externas.
-    mappings.py, sql.py        Constantes de negocio: columnas/tablas/anchos
-                                de truncamiento, y las sentencias T-SQL
-                                migradas literalmente de cada Execute SQL Task.
-    extraction.py               Extraccion: Excel -> DataFrame saneado.
-    validation.py                Validacion: los 4 controles de la tarea 'VALIDA'.
-    transformation.py            Transformacion: CARGA DNI, ACTUALIZA STATUS,
-                                LIMITA CLIENTES, LIMPIA TEMPORAL.
-    load.py                     Carga: truncados, inserts y copia entre bases.
-    pipeline.py                  Orquestador: llama a los 4 pasos anteriores en
-                                el orden del Control Flow original.
-    db.py, spreadsheet.py       Adaptadores concretos: pyodbc (SQL Server) y
-                                pandas/openpyxl (Excel).
-    config.py, logging_setup.py Configuracion via '.env' y logging.
-    main.py (este archivo)      Composition root: arma db.py/spreadsheet.py y
-                                los pasa a CarteraPipeline.
+Arquitectura (modular, dividida en las 4 capas del proceso original, una
+carpeta por capa):
+    extraccion/extractor.py       Extraccion: Excel -> DataFrame saneado.
+    validacion/validator.py       Validacion: los 4 controles de la tarea 'VALIDA'.
+    transformacion/transformer.py Transformacion: CARGA DNI, ACTUALIZA STATUS,
+                                   LIMITA CLIENTES, LIMPIA TEMPORAL.
+    carga/loader.py               Carga: truncados, inserts y copia entre bases.
+    pipeline.py                   Orquestador: llama a las 4 capas anteriores en
+                                   el orden del Control Flow original.
+    models.py, exceptions.py      Value objects (Periodo, ResultadoPipeline) y
+                                   excepciones. Sin dependencias externas.
+    mappings.py, sql.py           Constantes de negocio: columnas/tablas/anchos
+                                   de truncamiento, y las sentencias T-SQL
+                                   migradas literalmente de cada Execute SQL Task.
+    db.py, spreadsheet.py         Adaptadores concretos: pyodbc (SQL Server) y
+                                   pandas/openpyxl (Excel).
+    config.py, logging_setup.py   Configuracion via '.env' y logging.
+    main.py (este archivo)        Composition root: arma db.py/spreadsheet.py y
+                                   los pasa a CarteraPipeline.
 
 Configuracion:
     Los valores se leen del archivo '.env' (junto a este script; ver

@@ -8,39 +8,48 @@ contra el histórico acumulado.
 
 ## Arquitectura
 
-Un archivo = un componente del proceso, todos en la raíz del proyecto (sin
-capas domain/application/infrastructure ni interfaces `Protocol` de por
-medio):
+Modular por componentes, dividida en 4 capas que replican 1:1 las 4 etapas
+del proceso original (extracción, validación, transformación, carga), cada
+una en su propia carpeta — sin capas domain/application/infrastructure ni
+interfaces `Protocol` de por medio:
 
 ```
-models.py           # Value objects: Periodo, ResultadoPipeline
-exceptions.py        # Excepciones del proceso (ExtraccionError, ValidacionError, ...)
-mappings.py          # Columnas/tablas/anchos de truncamiento (constantes de negocio)
-sql.py               # Sentencias T-SQL migradas literalmente de cada Execute SQL Task
+extraccion/
+└── extractor.py       # extraer(): Origen Excel + Conversión de datos + Columna derivada
 
-extraction.py        # Extracción: Origen Excel + Conversión de datos + Columna derivada
-validation.py        # Validación: tarea 'VALIDA' (4 controles de calidad)
-transformation.py    # Transformación: CARGA DNI, ACTUALIZA STATUS, LIMITA CLIENTES, LIMPIA TEMPORAL
-load.py              # Carga: truncados, inserciones y copia entre bases de datos
-pipeline.py          # CarteraPipeline: orquesta los 4 pasos anteriores en el
-                     # orden del Control Flow original
+validacion/
+└── validator.py       # validar_cartera_temporal(): tarea 'VALIDA' (4 controles de calidad)
 
-db.py                # DatabaseGateway (pyodbc) + fábrica de conexiones
-                     # (una por Connection Manager OLE DB del .dtsx original)
-spreadsheet.py       # SpreadsheetReader (pandas/openpyxl)
-config.py            # Carga de '.env' -> Settings (sin credenciales embebidas)
-logging_setup.py     # Logging (archivo + consola)
+transformacion/
+└── transformer.py     # CARGA DNI, ACTUALIZA STATUS, LIMITA CLIENTES, LIMPIA TEMPORAL
 
-main.py              # CLI + composition root: arma db.py/spreadsheet.py e
-                     # inyecta en CarteraPipeline
+carga/
+└── loader.py          # truncados, inserciones y copia entre bases de datos
+
+pipeline.py           # CarteraPipeline: orquesta las 4 capas anteriores en el
+                       # orden del Control Flow original
+
+models.py             # Value objects: Periodo, ResultadoPipeline
+exceptions.py          # Excepciones del proceso (ExtraccionError, ValidacionError, ...)
+mappings.py            # Columnas/tablas/anchos de truncamiento (constantes de negocio)
+sql.py                 # Sentencias T-SQL migradas literalmente de cada Execute SQL Task
+
+db.py                 # DatabaseGateway (pyodbc) + fábrica de conexiones
+                       # (una por Connection Manager OLE DB del .dtsx original)
+spreadsheet.py         # SpreadsheetReader (pandas/openpyxl)
+config.py              # Carga de '.env' -> Settings (sin credenciales embebidas)
+logging_setup.py       # Logging (archivo + consola)
+
+main.py                # CLI + composition root: arma db.py/spreadsheet.py e
+                       # inyecta en CarteraPipeline
 ```
 
-`extraction.py`, `validation.py`, `transformation.py` y `load.py` reciben un
+`extractor.py`, `validator.py`, `transformer.py` y `loader.py` reciben un
 `DatabaseGateway`/`SpreadsheetReader` (o duck-types equivalentes, como los
 *fakes* de `tests/unit/fakes.py`) como parámetro — no importan `db.py` ni
 `spreadsheet.py` para nada más que el type hint, así que se pueden probar sin
 base de datos ni Excel reales. `pipeline.py` es el único módulo que conoce
-los 4 pasos a la vez; `main.py` es el único que además conoce `db.py` y
+las 4 capas a la vez; `main.py` es el único que además conoce `db.py` y
 `spreadsheet.py`.
 
 ## Proceso original (Control Flow de `CL_Proc_Carga_Cartera.dtsx`)
@@ -101,13 +110,13 @@ Los tests usan *fakes* de `DatabaseGateway`/`SpreadsheetReader`
 (`tests/unit/fakes.py`), por lo que no requieren base de datos ni archivo
 Excel reales. Cubren:
 
-- `test_extraction.py`: truncamiento de columnas (incl. el caso `SEGME`) y su
+- `test_extractor.py`: truncamiento de columnas (incl. el caso `SEGME`) y su
   disposición de error (`FailComponent` vs. `IgnoreFailure` en `NOMCLI`),
   columnas descartadas (`RUTCLI`, `RUT10`), columnas de período agregadas.
-- `test_validation.py`: los 4 controles de calidad, y que el pipeline se
+- `test_validator.py`: los 4 controles de calidad, y que el pipeline se
   detiene en el primero que falla (mismo comportamiento que el `RAISERROR`
   original).
-- `test_load.py`: selección/renombrado de columnas al copiar de staging a
+- `test_loader.py`: selección/renombrado de columnas al copiar de staging a
   `TBL_CARTERA_ACTUAL`.
 - `test_pipeline.py`: las 3 Sequence Containers se ejecutan en orden y tocan
   las tablas/sentencias esperadas, incluido el orden exacto dentro de
@@ -137,7 +146,7 @@ Excel reales. Cubren:
   `errorRowDisposition="FailComponent"` para todas las columnas de
   `mappings.TRUNCATION_LENGTHS` salvo `NOMCLI`, que tiene `IgnoreFailure`. Es
   decir: si `RUT_DV`, `SEGME`, etc. exceden su ancho, SSIS aborta todo el
-  Data Flow; solo `NOMCLI` se trunca en silencio. `extraction.py::_truncar`
+  Data Flow; solo `NOMCLI` se trunca en silencio. `extraccion/extractor.py::_truncar`
   replica esta asimetría (`mappings.TRUNCATION_TOLERANT_COLUMN`): lanza
   `ExtraccionError` si una columna no tolerante excede su ancho, en vez de
   truncarla sin avisar.
