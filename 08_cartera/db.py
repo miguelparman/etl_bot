@@ -104,7 +104,10 @@ class DatabaseGateway:
                 total_insertadas = 0
                 for inicio in range(0, len(df), self._batch_size):
                     lote = df.iloc[inicio : inicio + self._batch_size]
-                    params = [tuple(fila) for fila in lote.itertuples(index=False, name=None)]
+                    params = [
+                        tuple(None if pd.isna(valor) else valor for valor in fila)
+                        for fila in lote.itertuples(index=False, name=None)
+                    ]
                     cursor.executemany(insert_sql, params)
                     self._conn.commit()
                     total_insertadas += len(params)
