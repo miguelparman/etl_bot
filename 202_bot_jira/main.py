@@ -18,7 +18,10 @@ def _imprimir_estado(row: WorklogRow, outcome: WorklogOutcome) -> None:
     if outcome.skipped:
         return
     estado = "OK" if outcome.ok else outcome.registrado
-    print(f"[{row.ticket_raw}] {estado} | Comentario: {row.comentario}")
+    print(
+        f"[{row.ticket_raw}] {estado} | Fecha: {row.fecha} | "
+        f"Registrado: {outcome.registrado} | Comentario: {row.comentario}"
+    )
 
 
 def main():
