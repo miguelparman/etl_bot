@@ -36,6 +36,7 @@ class PowerBiDetalleNCExtractor:
         self._page = page
         self._settings = settings
         self._diagnose = diagnose
+        self._ultimo_punto_menu: Optional[tuple[float, float]] = None
 
     # -- Punto de entrada del puerto ReportExtractor ------------------------
 
@@ -45,6 +46,7 @@ class PowerBiDetalleNCExtractor:
             diagnosticar_pagina(self._page)
         self._navegar_a_pagina_objetivo()
         self._aplicar_filtros()
+        self._capturar_estado_filtros()
         contenedor = self._localizar_tabla()
         self._abrir_menu_opciones(contenedor)
         return self._exportar_datos()
@@ -197,21 +199,35 @@ class PowerBiDetalleNCExtractor:
         del slicer (ej. 'PROVEEDOR') -- confirmado inspeccionando el DOM en
         vivo. Por eso no se puede buscar el combobox por su propio
         aria-label; hay que subir desde el título visible como con la tabla.
+
+        OJO 2: a diferencia de la tabla, el título del slicer NO se puede
+        usar como señal de "visual real" -- se confirmó en vivo que el
+        slicer 'AÑO NC' tiene el título oculto a propósito (el visual tiene
+        el título desactivado en el diseño del informe) mientras que el
+        elemento h3 sigue existiendo una sola vez en el DOM (sin duplicado).
+        Por eso aquí NO se exige que 'titulo' esté visible, solo que exista
+        y resuelva a un contenedor -- la visibilidad real se valida más
+        abajo sobre los controles interactivos (combobox/opciones), que sí
+        son siempre visibles cuando el slicer está en pantalla.
         """
-        titulo = self._page.locator(
-            "h3.slicer-header-text",
-            has_text=re.compile(rf"^\s*{re.escape(titulo_visible)}\s*$"),
-        ).first
-        contenedor = titulo.locator(
-            "xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' visual-container-component ')][1]"
-        ).first
-        if contenedor.count() == 0:
-            raise VisualNoEncontradoError(
-                f"No se encontró el filtro '{titulo_visible}' en la página "
-                f"'{self._settings.report_page_name}'. Ejecuta con --diagnose "
-                "para revisar los filtros detectados."
-            )
-        return contenedor
+        patron = re.compile(rf"^\s*{re.escape(titulo_visible)}\s*$")
+        deadline = time.time() + self._settings.menu_timeout / 1000
+        while True:
+            titulo = self._page.locator("h3.slicer-header-text", has_text=patron).first
+            contenedor = titulo.locator(
+                "xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' visual-container-component ')][1]"
+            ).first
+            if contenedor.count() > 0:
+                return contenedor
+            if time.time() >= deadline:
+                break
+            self._page.wait_for_timeout(300)
+
+        raise VisualNoEncontradoError(
+            f"No se encontró el filtro '{titulo_visible}' en la página "
+            f"'{self._settings.report_page_name}'. Ejecuta con --diagnose "
+            "para revisar los filtros detectados."
+        )
 
     def _aplicar_filtros(self) -> None:
         """Aplica los filtros configurables (.env) antes de exportar la tabla."""
@@ -221,6 +237,19 @@ class PowerBiDetalleNCExtractor:
         # Deja que el informe recalcule los visuales tras aplicar los filtros
         # antes de seguir con la localización/exportación de la tabla.
         self._page.wait_for_timeout(1_000)
+
+    def _opcion_ya_seleccionada(self, opcion: Locator) -> bool:
+        """
+        Indica si una opción de slicer ya está marcada. OJO: no todos los
+        slicers de Power BI exponen el estado con el mismo atributo --
+        confirmado en vivo que el slicer PROVEEDOR (checkbox-list, con
+        "Seleccionar todo") usa 'aria-checked' ("true"/"false"/"mixed"), NO
+        'aria-selected' (que en ese caso ni siquiera existe, devuelve None).
+        Leer solo 'aria-selected' hacía que el código nunca detectara una
+        opción ya marcada en ese tipo de slicer y la desmarcara sin querer
+        en cada corrida. Por eso se revisan ambos atributos.
+        """
+        return opcion.get_attribute("aria-selected") == "true" or opcion.get_attribute("aria-checked") == "true"
 
     def _aplicar_filtro_anio(self, valor: str) -> None:
         """
@@ -243,7 +272,7 @@ class PowerBiDetalleNCExtractor:
                 # está seleccionada, un clic la DESELECCIONA (deja el filtro
                 # en "Todas") en vez de confirmarla. Solo se hace clic si
                 # todavía no está seleccionada.
-                if opcion.first.get_attribute("aria-selected") == "true":
+                if self._opcion_ya_seleccionada(opcion.first):
                     logger.info(f"AÑO NC ya estaba en {valor}; no se toca.")
                 else:
                     opcion.first.click()
@@ -314,12 +343,33 @@ class PowerBiDetalleNCExtractor:
         # Los slicers de Power BI son de tipo toggle: si la opción ya está
         # seleccionada, un clic la DESELECCIONA (deja el filtro en "Todas")
         # en vez de confirmarla. Solo se hace clic si todavía no lo está.
-        if opcion.first.get_attribute("aria-selected") == "true":
+        if self._opcion_ya_seleccionada(opcion.first):
             logger.info(f"{titulo_visible} ya estaba en {valor}; no se toca.")
         else:
             opcion.first.click()
         page.keyboard.press("Escape")
         page.wait_for_timeout(300)
+
+    def _capturar_estado_filtros(self) -> None:
+        """
+        Guarda una captura de pantalla justo después de aplicar los filtros
+        (y antes de exportar), sobrescribiendo siempre el mismo archivo. Un
+        clic de slicer puede "tener éxito" para Playwright (sin excepción,
+        con 'aria-selected' en true) sin que el visual objetivo realmente
+        quede filtrado -- por ejemplo si el título del slicer estaba
+        duplicado en el DOM (ver '_contenedor_de_slicer') o si el informe
+        tiene desactivada la interacción entre ese slicer y la tabla
+        ("Editar interacciones" en Power BI). Esta captura permite verificar
+        de un vistazo, en cada corrida, si la tabla en pantalla refleja el
+        período/proveedor esperado.
+        """
+        try:
+            self._settings.screenshots_dir.mkdir(parents=True, exist_ok=True)
+            ruta = self._settings.screenshots_dir / "ultima_verificacion_filtros.png"
+            self._page.screenshot(path=str(ruta), full_page=True)
+            logger.info(f"Captura de verificación de filtros guardada en: {ruta}")
+        except Exception:
+            logger.warning("No se pudo guardar la captura de verificación de filtros.")
 
     # -- Localización de la tabla ----------------------------------------------
 
@@ -427,6 +477,18 @@ class PowerBiDetalleNCExtractor:
                 f"'{self._settings.table_visual_name}' quedara visible."
             )
 
+    def _clic_por_posicion(self, x: float, y: float, motivo: str) -> None:
+        """
+        Último recurso cuando un elemento no se puede ubicar por selector:
+        clic directo por coordenadas de pantalla. Se usa solo como fallback
+        (nunca como primera opción) porque es frágil ante cualquier cambio
+        de layout/zoom/scroll -- pero un clic aproximado en el lugar
+        correcto es preferible a que todo el proceso falle.
+        """
+        logger.warning(f"No se pudo ubicar '{motivo}' por selector; probando clic por posición ({x:.0f}, {y:.0f}).")
+        self._page.mouse.click(x, y)
+        self._page.wait_for_timeout(400)
+
     def _abrir_menu_opciones(self, contenedor: Locator) -> None:
         """
         El botón de "más opciones" (...) suele quedar oculto
@@ -439,6 +501,15 @@ class PowerBiDetalleNCExtractor:
         nota en _localizar_tabla), así que el hover se hace sobre su título
         (con geometría real) -- el estado :hover se propaga igual a
         'contenedor' porque el título es descendiente suyo.
+
+        Si el botón "..." no se puede ubicar por selector (p. ej. cambia el
+        aria-label en una actualización de Power BI), se hace clic por
+        posición en la esquina superior derecha del visual -- ahí es donde
+        Power BI coloca siempre ese botón para cualquier tabla/visual
+        (confirmado en capturas reales del informe). Se guarda el punto
+        donde se abrió el menú ('_ultimo_punto_menu') para que
+        '_exportar_datos' pueda usarlo como referencia si también necesita
+        recurrir a clics por posición.
         """
         logger.info("Abriendo menú de la tabla...")
         ancla_candidatos = contenedor.locator(
@@ -456,13 +527,58 @@ class PowerBiDetalleNCExtractor:
         )
         try:
             boton.first.wait_for(state="visible", timeout=self._settings.menu_timeout)
-        except PlaywrightTimeoutError as exc:
+            caja = boton.first.bounding_box()
+            boton.first.click()
+            if caja is not None:
+                self._ultimo_punto_menu = (caja["x"] + caja["width"] / 2, caja["y"] + caja["height"] / 2)
+            return
+        except PlaywrightTimeoutError:
+            pass
+
+        caja_contenedor = ancla.bounding_box() or contenedor.bounding_box()
+        if caja_contenedor is None:
             raise VisualNoEncontradoError(
                 "No se encontró el botón de opciones (...) para "
-                f"'{self._settings.table_visual_name}'. Puede que Power BI "
-                "haya cambiado el aria-label del botón; ejecuta con --diagnose."
-            ) from exc
-        boton.first.click()
+                f"'{self._settings.table_visual_name}' ni se pudo calcular su "
+                "posición aproximada. Ejecuta con --diagnose."
+            )
+        x = caja_contenedor["x"] + caja_contenedor["width"] - 12
+        y = caja_contenedor["y"] + 12
+        self._clic_por_posicion(x, y, "botón de opciones (...)")
+        self._ultimo_punto_menu = (x, y)
+
+    def _caja_dialogo_exportacion(self) -> Optional[dict]:
+        """
+        Bounding box del diálogo "¿Qué datos quiere exportar?", usado como
+        referencia para los clics por posición cuando el texto/rol de sus
+        controles no se puede ubicar. Se intenta primero con selectores
+        genéricos de diálogo; si ninguno resuelve, se asume que el diálogo
+        está centrado en el viewport con el tamaño observado en capturas
+        reales (~630x460) -- Power BI lo centra siempre, así que esa
+        posición es una referencia razonable como último recurso.
+        """
+        candidatos = [
+            self._page.get_by_role("dialog"),
+            self._page.locator("[class*='exportDataDialog']"),
+            self._page.locator("[class*='mat-dialog-container']"),
+        ]
+        for candidato in candidatos:
+            try:
+                if candidato.count() > 0:
+                    caja = candidato.first.bounding_box()
+                    if caja is not None:
+                        return caja
+            except Exception:
+                continue
+
+        viewport = self._page.viewport_size or {"width": 1600, "height": 900}
+        ancho, alto = 630, 460
+        return {
+            "x": (viewport["width"] - ancho) / 2,
+            "y": (viewport["height"] - alto) / 2,
+            "width": ancho,
+            "height": alto,
+        }
 
     # -- Exportación / descarga ----------------------------------------------
 
@@ -476,9 +592,16 @@ class PowerBiDetalleNCExtractor:
         capa global (no dentro del contenedor del visual), por eso aquí se
         busca en 'page' completo — ya no hay ambigüedad porque solo puede
         haber un menú/diálogo abierto a la vez.
+
+        Cada paso intenta primero el selector semántico (rol/texto) y solo
+        si falla recurre a un clic por posición: el ítem "Exportar datos"
+        aparece justo debajo del punto donde se abrió el menú
+        ('_ultimo_punto_menu'), y el diálogo "¿Qué datos quiere exportar?"
+        aparece centrado en el viewport (confirmado en capturas reales).
         """
         page = self._page
         timeout = self._settings.menu_timeout
+        punto_menu = getattr(self, "_ultimo_punto_menu", None)
 
         logger.info("Seleccionando Exportar datos...")
         item_exportar = page.get_by_role(
@@ -486,33 +609,62 @@ class PowerBiDetalleNCExtractor:
         )
         try:
             item_exportar.first.wait_for(state="visible", timeout=timeout)
-        except PlaywrightTimeoutError as exc:
-            raise DescargaError(
-                "No apareció la opción 'Exportar datos' en el menú contextual "
-                "(¿el usuario tiene permiso de exportación en este informe?)."
-            ) from exc
-        item_exportar.first.click()
+            item_exportar.first.click()
+        except PlaywrightTimeoutError:
+            if punto_menu is None:
+                raise DescargaError(
+                    "No apareció la opción 'Exportar datos' en el menú contextual "
+                    "(¿el usuario tiene permiso de exportación en este informe?)."
+                )
+            # 'Exportar datos' es el 5º ítem del menú contextual que se abre
+            # justo debajo del botón "..." (confirmado en capturas reales:
+            # Compartir, Agregar alerta, Agregar un comentario, Explorar
+            # estos datos, Exportar datos, ...). Cada ítem mide ~32px.
+            self._clic_por_posicion(punto_menu[0] - 60, punto_menu[1] + 4.5 * 32, "'Exportar datos'")
 
         logger.info("Seleccionando Datos con diseño actual...")
         opcion_layout = page.get_by_text(re.compile(r"current layout|diseño actual", re.I))
         try:
             opcion_layout.first.wait_for(state="visible", timeout=timeout)
-        except PlaywrightTimeoutError as exc:
-            raise DescargaError(
-                "No apareció la opción 'Datos con diseño actual' en el diálogo "
-                "de exportación."
-            ) from exc
-        opcion_layout.first.click()
+            opcion_layout.first.click()
+        except PlaywrightTimeoutError:
+            caja_dialogo = self._caja_dialogo_exportacion()
+            if caja_dialogo is None:
+                raise DescargaError(
+                    "No apareció la opción 'Datos con diseño actual' en el diálogo "
+                    "de exportación."
+                )
+            # "Datos con diseño actual" es la primera (izquierda) de las 3
+            # tarjetas del diálogo, y además viene seleccionada por defecto
+            # (confirmado en capturas reales) -- el clic solo confirma esa
+            # selección por defecto.
+            self._clic_por_posicion(
+                caja_dialogo["x"] + caja_dialogo["width"] * 0.18,
+                caja_dialogo["y"] + caja_dialogo["height"] * 0.40,
+                "'Datos con diseño actual'",
+            )
 
         boton_exportar = page.get_by_role("button", name=re.compile(r"^export$|^exportar$", re.I))
+        usar_posicion_exportar = False
         try:
             boton_exportar.first.wait_for(state="visible", timeout=timeout)
-        except PlaywrightTimeoutError as exc:
-            raise DescargaError("No apareció el botón 'Exportar' del diálogo.") from exc
+        except PlaywrightTimeoutError:
+            caja_dialogo = self._caja_dialogo_exportacion()
+            if caja_dialogo is None:
+                raise DescargaError("No apareció el botón 'Exportar' del diálogo.")
+            usar_posicion_exportar = True
 
         logger.info("Iniciando descarga...")
         with page.expect_download(timeout=self._settings.download_timeout) as download_info:
-            boton_exportar.first.click()
+            if usar_posicion_exportar:
+                caja_dialogo = self._caja_dialogo_exportacion()
+                self._clic_por_posicion(
+                    caja_dialogo["x"] + caja_dialogo["width"] - 60,
+                    caja_dialogo["y"] + caja_dialogo["height"] - 30,
+                    "'Exportar'",
+                )
+            else:
+                boton_exportar.first.click()
         download = download_info.value
         logger.info("Archivo descargado correctamente.")
 
