@@ -7,15 +7,21 @@ Para agregar una tabla nueva, suma una entrada con:
   - date_field: campo (entre corchetes) que se usa para determinar el mes.
                 Dejar "" (vacio) para descargar la tabla completa, sin
                 filtrar por los dos ultimos meses (ej. base_saip).
+  - is_datetime: True cuando date_field es un datetime completo (con hora/
+                segundos) en vez de un codigo YYYYMM. En ese caso se agrupa
+                por mes (FORMAT(campo, 'yyyyMM')) antes de tomar los dos
+                ultimos meses, porque los valores exactos casi nunca se
+                repiten y "2 valores distintos" no equivaldria a "2 meses"
+                (ej. CALLBACK.[FECHA]). Se puede omitir; por defecto es False.
 """
 
 TABLES = [
-  
+
     {"table": "[Externos_Frac].[dbo].[ENCUESTA]", "date_field": "[periodo_evento]"},
     {"table": "[Externos_Frac].[dbo].[WS_MEDALLIA_2]", "date_field": "[Periodo]"},
     {"table": "[Externos_Frac].[dbo].[ABANDONO]", "date_field": "[DATE_YYYYMM]"},
     {"table": "[Externos_Frac].[dbo].[ATENDIDA]", "date_field": "[DATE_YYYYMM]"},
-    {"table": "[Externos_Frac].[dbo].[CALLBACK]", "date_field": "[FECHA]"},
+    {"table": "[Externos_Frac].[dbo].[CALLBACK]", "date_field": "[FECHA]", "is_datetime": True},
     {"table": "[Externos_Frac].[dbo].[CLEARED]", "date_field": "[DATE_YYYYMM]"},
     {"table": "[Externos_Frac].[dbo].[OUTBOUND]", "date_field": "[DATE_YYYYMM]"},
     {"table": "[Externos_Frac].[dbo].[RECIBIDA]", "date_field": "[DATE_YYYYMM]"},

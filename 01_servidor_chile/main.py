@@ -44,17 +44,25 @@ def nombre_archivo(tabla: str) -> str:
     return f"{_TABLE_NAME_RE.findall(tabla)[-1]}.csv"
 
 
-def ultimos_dos_meses(cursor, tabla: str, campo_fecha: str) -> list:
+def ultimos_dos_meses(cursor, tabla: str, campo_fecha: str, es_datetime: bool = False) -> list:
+    """Devuelve los codigos YYYYMM (o valores de campo_fecha) de los dos
+    ultimos meses con datos.
+
+    Si es_datetime es True, campo_fecha es un datetime completo (con hora):
+    se agrupa por mes con FORMAT(..., 'yyyyMM') antes de tomar el TOP (2),
+    porque los valores exactos casi nunca se repiten entre filas.
+    """
+    campo = f"FORMAT({campo_fecha}, 'yyyyMM')" if es_datetime else campo_fecha
     cursor.execute(
-        f"SELECT DISTINCT TOP (2) {campo_fecha} FROM {tabla} "
-        f"WHERE {campo_fecha} IS NOT NULL ORDER BY {campo_fecha} DESC"
+        f"SELECT DISTINCT TOP (2) {campo} FROM {tabla} "
+        f"WHERE {campo_fecha} IS NOT NULL ORDER BY {campo} DESC"
     )
     return [fila[0] for fila in cursor.fetchall()]
 
 
 def formatear_meses(meses: list) -> list:
-    """Para campos datetime (ej. CALLBACK.[FECHA]) muestra solo la fecha,
-    sin la hora, para que el aviso de estado quede compacto."""
+    """Para campos datetime muestra solo la fecha, sin la hora, para que el
+    aviso de estado quede compacto."""
     return [v.strftime("%Y-%m-%d") if isinstance(v, datetime) else v for v in meses]
 
 
@@ -62,7 +70,7 @@ def formatear_duracion(segundos: float) -> str:
     return str(timedelta(seconds=round(segundos)))
 
 
-def exportar_tabla(cursor, tabla: str, campo_fecha: str, ruta_csv: Path):
+def exportar_tabla(cursor, tabla: str, campo_fecha: str, ruta_csv: Path, es_datetime: bool = False):
     """Exporta la tabla a CSV y devuelve (filas_totales, meses).
 
     meses es None si fue una descarga completa (sin date_field), o la lista
@@ -70,11 +78,15 @@ def exportar_tabla(cursor, tabla: str, campo_fecha: str, ruta_csv: Path):
     no tiene datos y no se genero archivo.
     """
     if campo_fecha:
-        meses = ultimos_dos_meses(cursor, tabla, campo_fecha)
+        meses = ultimos_dos_meses(cursor, tabla, campo_fecha, es_datetime)
         if not meses:
             return 0, []
         placeholders = ",".join("?" for _ in meses)
-        cursor.execute(f"SELECT * FROM {tabla} WHERE {campo_fecha} IN ({placeholders})", meses)
+        if es_datetime:
+            condicion = f"FORMAT({campo_fecha}, 'yyyyMM') IN ({placeholders})"
+        else:
+            condicion = f"{campo_fecha} IN ({placeholders})"
+        cursor.execute(f"SELECT * FROM {tabla} WHERE {condicion}", meses)
     else:
         meses = None
         cursor.execute(f"SELECT * FROM {tabla}")
@@ -116,13 +128,14 @@ def main():
         for tabla_cfg in TABLES:
             tabla = tabla_cfg["table"]
             campo_fecha = tabla_cfg["date_field"]
+            es_datetime = tabla_cfg.get("is_datetime", False)
             ruta_csv = EXPORTS_DIR / nombre_archivo(tabla)
 
             print(f"[{datetime.now():%H:%M:%S}] INICIO  {tabla}")
             inicio = time.perf_counter()
             filas_totales = 0
             try:
-                filas_totales, meses = exportar_tabla(cursor, tabla, campo_fecha, ruta_csv)
+                filas_totales, meses = exportar_tabla(cursor, tabla, campo_fecha, ruta_csv, es_datetime)
                 if meses == []:
                     estado = "SIN DATOS"
                 else:
