@@ -33,7 +33,7 @@ Además de subir cada informe a SharePoint, el bot lo copia a `LOCAL_COPY_DIR` (
 
 ## Ejecución programada (Windows Task Scheduler)
 
-El archivo `run_task.bat` ya deja listo el arranque sin consola (usa `pythonw.exe`, fija el directorio de trabajo, y con `HEADLESS=true` no abre ninguna ventana). Para programarlo:
+El archivo `run_task.bat` ya deja listo el arranque (usa `python.exe`, no `pythonw.exe`, para que el progreso se vea en la consola de la tarea igual que en VSCode; fija el directorio de trabajo; y con `HEADLESS=true` no abre ninguna ventana de navegador salvo que la sesión guardada haya expirado, en cuyo caso sí se abre una para completar el login/MFA). Para programarlo:
 
 1. Asegúrate de que `.env` tiene `HEADLESS=true` y de que ya existe una sesión guardada válida (sección anterior).
 2. Abre el **Programador de tareas** de Windows → *Crear tarea básica*.
@@ -64,6 +64,6 @@ bot/
 │   └── services/           # Orquestador, reintentos, copia local adicional
 ├── config/reports.py       # Catálogo de informes (agregar aquí, sin tocar código)
 ├── downloads/ logs/ screenshots/ playwright/.auth/   # Datos locales (no versionados)
-├── run_task.bat            # Wrapper para Task Scheduler (pythonw.exe, sin consola)
+├── run_task.bat            # Wrapper para Task Scheduler (python.exe, con consola)
 └── main.py                 # Punto de entrada
 ```

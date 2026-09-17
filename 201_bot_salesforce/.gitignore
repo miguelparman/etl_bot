@@ -4,6 +4,7 @@ playwright/.auth/
 downloads/
 logs/
 screenshots/
+bot.lock
 
 # Python
 __pycache__/

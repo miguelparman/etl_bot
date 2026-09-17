@@ -117,12 +117,17 @@ class SalesforceClient:
         guardada respetando HEADLESS.
         """
         log.info("Iniciando login interactivo de Salesforce (navegador visible)...")
-        browser = self._playwright.chromium.launch(headless=False)
-        context = browser.new_context()
+        # --start-maximized + no_viewport: bajo el Programador de tareas la
+        # ventana puede abrirse detras de otras o con un tamaño reducido y
+        # pasar desapercibida; maximizarla y traerla al frente la hace mucho
+        # mas dificil de perder de vista.
+        browser = self._playwright.chromium.launch(headless=False, args=["--start-maximized"])
+        context = browser.new_context(no_viewport=True)
         page = context.new_page()
         page.set_default_timeout(self._page_timeout_ms)
 
         try:
+            page.bring_to_front()
             page.goto(self._domain, wait_until="domcontentloaded")
             auth.fill_login_form(page, self._username, self._password)
 
@@ -135,6 +140,13 @@ class SalesforceClient:
             self._auth_state_path.parent.mkdir(parents=True, exist_ok=True)
             context.storage_state(path=str(self._auth_state_path))
             log.info("Sesion de Salesforce guardada en %s", self._auth_state_path)
+        except Exception:
+            # Sin esto, una excepcion aqui (p.ej. un fallo al lanzar
+            # Chromium o al navegar) se pierde en completo silencio bajo
+            # pythonw.exe (sys.stderr es None: no hay traceback en ninguna
+            # parte). Se deja constancia explicita en el log del dia.
+            log.exception("Fallo el login interactivo de Salesforce.")
+            raise
         finally:
             context.close()
             browser.close()

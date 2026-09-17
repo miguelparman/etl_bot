@@ -2,17 +2,20 @@
 Punto de entrada de la automatizacion Salesforce -> SharePoint.
 
 Uso:
-    python main.py                (interactivo, con consola)
-    pythonw.exe main.py           (desatendido/programado, sin consola)
+    python main.py                (interactivo o programado, con consola)
+    pythonw.exe main.py           (desatendido, sin consola -- el logger
+                                   sigue escribiendo en logs/ igual)
 
-Estado actual (Fase 10): ademas de la integracion completa (Fases 7-9),
-preparado para ejecucion desatendida via Windows Task Scheduler: el logger
-funciona sin consola (pythonw.exe deja sys.stdout/sys.stderr en None), y
-cualquier fallo durante el arranque (antes de que exista el logger, p.ej.
-un .env mal configurado) queda registrado en logs/startup_error.log en vez
-de perderse en silencio. La creacion de la tarea programada en si (Trigger,
-Accion, etc.) es un paso manual documentado en README.md -- no se
-automatiza aqui.
+El Programador de tareas de Windows llama a run_task.bat, que usa
+python.exe (no pythonw.exe) precisamente para que el progreso se vea en
+la consola de la tarea igual que al ejecutar main.py desde VSCode --
+incluido el aviso de MFA si la sesion de Salesforce necesita renovarse.
+Si se invoca con pythonw.exe (sys.stdout/sys.stderr en None), el logger
+sigue funcionando sin consola, y cualquier fallo durante el arranque
+(antes de que exista el logger, p.ej. un .env mal configurado) queda
+registrado en logs/startup_error.log en vez de perderse en silencio. La
+creacion de la tarea programada en si (Trigger, Accion, etc.) es un paso
+manual documentado en README.md -- no se automatiza aqui.
 """
 
 from __future__ import annotations
@@ -25,6 +28,7 @@ try:
     from app.salesforce.client import SalesforceClient
     from app.services.local_delivery import LocalDeliveryCopier
     from app.services.orchestrator import ReportOrchestrator, format_summary
+    from app.services.process_lock import ProcessLock
     from app.services.retry import retry_call
     from app.sharepoint.auth import get_graph_token
     from app.sharepoint.client import SharePointClient, SharePointFolderResolver
@@ -48,6 +52,23 @@ except Exception:
 
 
 def main() -> int:
+    lock = ProcessLock(settings.base_dir / "bot.lock")
+    lock.acquire()
+
+    try:
+        return _run()
+    except Exception:
+        # Ultima red de seguridad: sin esto, cualquier fallo no controlado
+        # aqui (p.ej. el login interactivo de Salesforce) se pierde en
+        # silencio total bajo pythonw.exe (sys.stderr es None, no queda
+        # traceback en ninguna parte). Se deja constancia en el log del dia.
+        log.exception("Fallo no controlado durante la ejecucion.")
+        return 1
+    finally:
+        lock.release()
+
+
+def _run() -> int:
     log.info("=" * 50)
     log.info("SALESFORCE -> SHAREPOINT AUTOMATION")
     log.info("=" * 50)
