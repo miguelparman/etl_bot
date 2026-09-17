@@ -9,7 +9,9 @@ class UsuariosError(Exception):
 
 
 class ExtraccionError(UsuariosError):
-    """Fallo la lectura de un Origen OLE DB (Externos_Frac o CL_USUARIOS)."""
+    """Fallo la lectura de un Origen: descarga/parseo de un CSV en
+    SharePoint (Microsoft Graph, reemplaza a Externos_Frac) o una validacion
+    de columnas/datos sobre el DataFrame leido."""
 
 
 class ValidacionError(UsuariosError):

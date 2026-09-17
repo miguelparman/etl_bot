@@ -7,6 +7,16 @@ Cada constante corresponde a UNA tarea/componente del Control Flow / Data
 Flow original. Los placeholders '?' son parametros posicionales, en el mismo
 orden y con el mismo binding (siempre User::Periodo / User::Periodo01) que
 en el .dtsx original.
+
+IMPORTANTE -- los Origenes OLE DB que consultaban Externos_Frac (marcados
+'YA NO SE EJECUTA' abajo) DEJARON de correr contra SQL Server: ese origen
+migro a CSV publicados en SharePoint via Microsoft Graph (ver
+sharepoint/reader.py, mappings.py). Las constantes se conservan tal cual
+como referencia literal de la logica de negocio (filtros, JOINs, dedup por
+ROW_NUMBER) que extraccion/extractor.py replica ahora en pandas -- no se
+ejecutan mas. Los DELETE/TRUNCATE/UPDATE/INSERT contra CL_USUARIOS y el
+SELECT de 'CARGA DE USUARIOS RETENCIONES SERVIDOR CHILE' (CL_DATA, mismo
+servidor que el destino) siguen vigentes sin cambios.
 """
 
 from __future__ import annotations
@@ -21,8 +31,11 @@ PARQUE_DELETE = """
   WHERE periodo >= FORMAT(DATEADD(MONTH, -1, CAST(? + '01' AS date)), 'yyyyMM')
 """
 
-# Origen OLE DB '55_PARQUE' del Data Flow 'PARQUE'. Conexion: Externos_Frac.
-# 3 parametros posicionales, los 3 enlazados a User::Periodo en el original.
+# YA NO SE EJECUTA (ver nota al inicio del archivo) -- Origen OLE DB
+# '55_PARQUE' del Data Flow 'PARQUE'. Conexion: Externos_Frac. 3 parametros
+# posicionales, los 3 enlazados a User::Periodo en el original. Reemplazado
+# por extraccion.extractor.extraer_parque (CSV 'pqe_fijtot2023.csv' /
+# 'pqe_movtot2023.csv' / 'RUT_marca_cartera.csv').
 PARQUE_SELECT = """
 WITH
 CTE_PARQUES AS
@@ -161,8 +174,10 @@ RETENCIONES_BAJAS_FRAUDE_DELETE = """
   WHERE CAST(PERIODO AS int) >= ?
 """
 
-# Origen OLE DB 'BAJAS_FRAUDE 233' del Data Flow 'TBL_SERVCH_BAJAS_FRAUDE'.
-# Conexion: Externos_Frac. Sin transformaciones (copia directa 1:1).
+# YA NO SE EJECUTA (ver nota al inicio del archivo) -- Origen OLE DB
+# 'BAJAS_FRAUDE 233' del Data Flow 'TBL_SERVCH_BAJAS_FRAUDE'. Conexion:
+# Externos_Frac. Sin transformaciones (copia directa 1:1). Reemplazado por
+# extraccion.extractor.extraer_bajas_fraude (CSV 'BAJAS_FRAUDE.csv').
 RETENCIONES_BAJAS_FRAUDE_SELECT = """
 SELECT
 	[PERIODO]
@@ -206,9 +221,11 @@ WHERE
 PERIODO >= ?
 """
 
-# Origen OLE DB '223_BAJAS_POR_ALTA_FO' del Data Flow
-# 'TBL_SERVCH_BAJAS_POR_ALTA_FO'. Conexion: Externos_Frac. Sin
-# transformaciones (copia directa 1:1).
+# YA NO SE EJECUTA (ver nota al inicio del archivo) -- Origen OLE DB
+# '223_BAJAS_POR_ALTA_FO' del Data Flow 'TBL_SERVCH_BAJAS_POR_ALTA_FO'.
+# Conexion: Externos_Frac. Sin transformaciones (copia directa 1:1).
+# Reemplazado por extraccion.extractor.extraer_bajas_por_alta (CSV
+# 'BAJAS_POR_ALTA_FO.csv').
 RETENCIONES_BAJAS_POR_ALTA_SELECT = """
 SELECT [PARK_EFFECT_DESC]
       ,[PARK_EFFECT_VALUE]
@@ -233,11 +250,14 @@ DELETE [CL_USUARIOS].[dbo].[BD_RETEN]
 WHERE [periodo] >= ?
 """
 
-# Origen OLE DB 'BD_RETEN_V2 (223)' del Data Flow 'BD_RETEN'. Conexion:
-# Externos_Frac. Dedup por (PERIODO,RUT,TPO_SERV,TPO_PROD,TPO_TECNO,submotivo)
-# quedandose con ROWNO=1; ademas del parametro '?' (User::Periodo) hay un
-# piso fijo 'periodo >= 202601' dentro del CTE -- se preservan ambos filtros
-# tal cual el original.
+# YA NO SE EJECUTA (ver nota al inicio del archivo) -- Origen OLE DB
+# 'BD_RETEN_V2 (223)' del Data Flow 'BD_RETEN'. Conexion: Externos_Frac.
+# Dedup por (PERIODO,RUT,TPO_SERV,TPO_PROD,TPO_TECNO,submotivo) quedandose
+# con ROWNO=1; ademas del parametro '?' (User::Periodo) hay un piso fijo
+# 'periodo >= 202601' dentro del CTE -- se preservan ambos filtros tal cual
+# el original. Reemplazado por
+# extraccion.extractor.extraer_bd_reten/_construir_bd_reten (CSV
+# 'BD_RETEN_V2.csv').
 RETENCIONES_BD_RETEN_SELECT = """
 WITH CTE_BD_RETEN AS
 (
@@ -338,8 +358,10 @@ WHERE
  CAST(PERIODO AS INT)  >= ?
 """
 
-# Origenes OLE DB del Data Flow 'TBL_CH_BAJAS' (2 pipes independientes, sin
-# interaccion entre si, ambos sin transformaciones). Conexion: Externos_Frac.
+# YA NO SE EJECUTA (ver nota al inicio del archivo) -- Origenes OLE DB del
+# Data Flow 'TBL_CH_BAJAS' (2 pipes independientes, sin interaccion entre si,
+# ambos sin transformaciones). Conexion: Externos_Frac. Reemplazado por
+# extraccion.extractor.extraer_bajas_fijo (CSV 'BAJAS_FIJO.csv').
 INTENCIONES_BAJAS_FIJO_SELECT = """
 SELECT
 	[CLOSE_DATE]
@@ -358,6 +380,8 @@ WHERE
 	CAST([YEAR_MONTH] AS INT)  >= ?
 """
 
+# YA NO SE EJECUTA (ver nota al inicio del archivo) -- reemplazado por
+# extraccion.extractor.extraer_bajas_movil (CSV 'BAJAS_MOVIL.csv').
 INTENCIONES_BAJAS_MOVIL_SELECT = """
 SELECT [LLAVE]
       ,[FECHA_BAJA]
@@ -382,27 +406,12 @@ SELECT [LLAVE]
 	CAST(PERIODO AS INT)  >= ?
 """
 
-# --- Sequence Container "Contenedor de secuencias" ---
-
-# Tarea 'TRUNCATE'. Conexion: Externos_Frac.
-INTENCIONES_TRUNCATE_USUARIOS_RETENCIONES = (
-    "truncate table [Externos_Frac].[dbo].[TBL_FRACTALIA_USER_RETENCIONES]"
-)
-
-# Origen OLE DB del Data Flow 'CARGA DE USUARIOS RETENCIONES SERVIDOR
-# CHILE'. Conexion: CL_USUARIOS (referencia cross-database a CL_DATA). Sin
-# parametros.
-INTENCIONES_USUARIOS_RETENCIONES_SELECT = """
-SELECT
-			Believe
-			,Programa
-			,Periodo
-		FROM
-			[CL_DATA].[dbo].[VIEW_USUARIOS_CON_DETALLE]
-		WHERE
-			Programa like '%retencion%'
-			and Programa like'%chile%'
-"""
+# NOTA: la Sequence Container "Contenedor de secuencias" ('TRUNCATE' +
+# Origen OLE DB de 'CARGA DE USUARIOS RETENCIONES SERVIDOR CHILE' contra
+# CL_DATA.VIEW_USUARIOS_CON_DETALLE + Destino OLE DB
+# 'TBL_FRACTALIA_USER_RETENCIONES' en Externos_Frac) se dio de baja por ser
+# un trabajo obsoleto -- ya no forma parte de 'intenciones' (ver
+# pipeline.py). Sus 2 constantes SQL (TRUNCATE + SELECT) se eliminaron.
 
 # --- Sequence Container "TBL_INTENCIONES" ---
 
@@ -413,10 +422,12 @@ WHERE
 	YEAR(CASE_OPEN_TIME)*100+MONTH(CASE_OPEN_TIME) >= ?
 """
 
-# Origen OLE DB del Data Flow 'INTENCIONES'. Conexion: Externos_Frac. Sigue
-# el componente 'Data Conversion 1' (ver mappings.py) y el Destino OLE DB
-# 'INTENCIONES LOCAL', que es el UNICO de los 5 paquetes con disposicion de
-# error 'IgnoreFailure' (ver db.bulk_insert_ignorando_errores).
+# YA NO SE EJECUTA (ver nota al inicio del archivo) -- Origen OLE DB del
+# Data Flow 'INTENCIONES'. Conexion: Externos_Frac. Sigue el componente
+# 'Data Conversion 1' (ver mappings.py) y el Destino OLE DB 'INTENCIONES
+# LOCAL', que es el UNICO de los 5 paquetes con disposicion de error
+# 'IgnoreFailure' (ver db.bulk_insert_ignorando_errores). Reemplazado por
+# extraccion.extractor.extraer_intenciones_v2 (CSV 'INTENCIONES_V2.csv').
 INTENCIONES_V2_SELECT = """
 SELECT
     [CASE_ID_NUMBER]
@@ -559,13 +570,17 @@ ITEM_AMDOCS_DELETE = """
   WHERE periodo >= ?
 """
 
-# Origen OLE DB del Data Flow 'INTEN_AMDOCS'. Conexion: Externos_Frac. Dedup
-# por case_idnum (ROWNO=1, ordenado por case_optim); ademas del parametro '?'
+# YA NO SE EJECUTA (ver nota al inicio del archivo) -- Origen OLE DB del
+# Data Flow 'INTEN_AMDOCS'. Conexion: Externos_Frac. Dedup por case_idnum
+# (ROWNO=1, ordenado por case_optim); ademas del parametro '?'
 # (User::Periodo01) hay un piso fijo 'periodo >= 202601' dentro del CTE -- se
 # preservan ambos filtros tal cual el original. Sigue el componente 'Data
 # Conversion' (ver mappings.py, disposicion IgnoreFailure -- casteos
 # tolerantes, no abortan fila) y el Destino OLE DB, que mapea 'ROWNO' a la
 # columna 'Evaluacion' y descarta 'rutcli' (ver extraccion/extractor.py).
+# Reemplazado por
+# extraccion.extractor.extraer_item_amdocs/_construir_item_amdocs (CSV
+# 'INTEN_AMDOCS.csv').
 ITEM_AMDOCS_SELECT = """
 WITH CTE_ITEM_AMDOCS AS
 (
@@ -777,11 +792,13 @@ WHERE
 # [dbo].[BASE_SAIP]'; el .dtsx original omitia el schema, que por defecto ya
 # es 'dbo'), igual que TEMP_01..TEMP_04 -- no necesita una constante propia.
 
-# Origen OLE DB '223 SAIP' del Data Flow 'SAIP'. Conexion: Externos_Frac. Sin
-# parametros. Sigue el componente 'Conversion de datos' (fec_ingr y FECHA a
-# fecha -- ver mappings.py) y el Destino OLE DB 'Local SAIP'; las columnas
+# YA NO SE EJECUTA (ver nota al inicio del archivo) -- Origen OLE DB '223
+# SAIP' del Data Flow 'SAIP'. Conexion: Externos_Frac. Sin parametros. Sigue
+# el componente 'Conversion de datos' (fec_ingr y FECHA a fecha -- ver
+# mappings.py) y el Destino OLE DB 'Local SAIP'; las columnas
 # 'fec_saip_a'/'fec_saip_b' se seleccionan pero no llegan al destino (ver
-# extraccion/extractor.py).
+# extraccion/extractor.py). Reemplazado por extraccion.extractor.extraer_saip
+# (CSV 'base_saip.csv').
 SAIP_SELECT = """
 /****** Script for SelectTopNRows command from SSMS  ******/
 SELECT  [rut_ej]

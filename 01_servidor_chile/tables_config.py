@@ -20,6 +20,8 @@ TABLES = [
     {"table": "[Externos_Frac].[dbo].[OUTBOUND]", "date_field": "[DATE_YYYYMM]"},
     {"table": "[Externos_Frac].[dbo].[RECIBIDA]", "date_field": "[DATE_YYYYMM]"},
     {"table": "[Externos_Frac].[dbo].[TRANSFER]", "date_field": "[DATE_YYYYMM]"},
+    {"table": "[Externos_Frac].[dbo].[INTEN_AMDOCS]", "date_field": "[periodo]"},
+    {"table": "[Externos_Frac].[dbo].[RUT_marca_cartera]", "date_field": ""},
     {"table": "[Externos_Frac].[dbo].[BAJAS_FIJO]", "date_field": "[YEAR_MONTH]"},
     {"table": "[Externos_Frac].[dbo].[BAJAS_FRAUDE]", "date_field": "[PERIODO]"},
     {"table": "[Externos_Frac].[dbo].[BAJAS_MOVIL]", "date_field": "[PERIODO]"},

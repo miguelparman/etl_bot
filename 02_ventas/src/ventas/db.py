@@ -1,12 +1,13 @@
 """Acceso a SQL Server: fabrica de conexiones (pyodbc) y el gateway que usan
-extractor.py/validator.py/transformer.py/loader.py para ejecutar scripts,
-truncar, consultar e insertar.
+extraccion/validacion/transformacion/carga para ejecutar scripts, truncar,
+consultar e insertar.
 
-Una instancia de DatabaseGateway equivale a un Connection Manager OLE DB de
-los 5 paquetes originales. El proyecto usa uno solo: 'CL_USUARIOS'
-(172.17.0.162, autenticacion SQL) -- 'Externos_Frac' ya no se usa (como
-origen migro a SharePoint/Microsoft Graph, y su unico destino se dio de baja
-por obsoleto, ver pipeline.py).
+Una instancia de DatabaseGateway equivale a UN Connection Manager OLE DB del
+proceso original. Este proyecto usa dos: 'CL_USUARIOS' (172.17.0.162, unico
+destino de Señalizaciones, y destino secundario de Ventas para
+TBL_FUNNEL_SENHALIZACIONES_DNI) y 'CL_DATA' (172.17.0.162, destino principal
+de Ventas) -- main.py crea una conexion/gateway por cada una y las pasa a
+VentasPipeline (ver pipeline.py).
 """
 
 from __future__ import annotations
@@ -21,26 +22,20 @@ import pyodbc
 from config import DbSettings
 from exceptions import CargaError
 
-logger = logging.getLogger("usuarios")
+logger = logging.getLogger("ventas")
 
 
 def _fila_a_parametros(fila: tuple) -> tuple:
-    """Sanea una fila (tupla de valores de un DataFrame) antes de bindear
-    los parametros del INSERT contra pyodbc:
+    """Sanea una fila (tupla de valores de un DataFrame) antes de bindear los
+    parametros del INSERT contra pyodbc:
 
-    - NaN/NaT/pd.NA -> None. Los origenes SQL (antes de la migracion a
-      SharePoint) siempre devolvian NULL -> None nativo via pyodbc; los CSV
-      via pandas (dtype=str, na_values=['']) representan una celda vacia
-      como NaN (float) en vez de None -- pyodbc no puede bindear un NaN
+    - NaN/NaT/pd.NA -> None. Los CSV/Excel via pandas representan una celda
+      vacia como NaN (float) en vez de None -- pyodbc no puede bindear un NaN
       crudo contra SQL Server (el driver corta la conexion con un error de
       protocolo TDS/RPC en vez de tratarlo como NULL).
     - Escalares numpy (numpy.int64, numpy.float64, etc.) -> tipo nativo de
-      Python. Las columnas 'Int64' nullable de pandas (ver
-      extraccion/extractor.py: _cast_int_estricto/_cast_int_tolerante)
-      entregan numpy.int64 al iterar con itertuples(), que pyodbc no sabe
-      describir ('Unknown object type ... during describe'); antes de la
-      migracion a SharePoint, todas las columnas numericas venian de
-      cursor.fetchall() de otra consulta SQL, siempre como int nativo.
+      Python: pyodbc no sabe describir un numpy.int64 ('Unknown object type
+      ... during describe'). Ver [[project-04usuarios-sharepoint-migration]].
     """
     saneada = []
     for valor in fila:
@@ -54,20 +49,12 @@ def _fila_a_parametros(fila: tuple) -> tuple:
 
 
 def crear_conexion(settings: DbSettings) -> pyodbc.Connection:
-    """Arma la cadena de conexion segun el modo de autenticacion del
-    Connection Manager original: SQL Server (UID/PWD, p.ej. 'CL_USUARIOS') si
-    'settings.user' esta definido, o Windows integrada (Trusted_Connection,
-    p.ej. 'Externos_Frac') si no lo esta."""
-    if settings.user:
-        auth = f"UID={settings.user};PWD={settings.password};Persist Security Info=True;"
-    else:
-        auth = "Trusted_Connection=yes;"
-
     conn_str = (
         f"DRIVER={{{settings.driver}}};"
         f"SERVER={settings.server};"
         f"DATABASE={settings.database};"
-        f"{auth}"
+        f"UID={settings.user};"
+        f"PWD={settings.password};"
         f"Encrypt={settings.encrypt};"
         f"TrustServerCertificate={settings.trust_server_certificate}"
     )
@@ -77,18 +64,18 @@ def crear_conexion(settings: DbSettings) -> pyodbc.Connection:
 class DatabaseGateway:
     """Envuelve una conexion pyodbc con las operaciones que el pipeline
     necesita (equivalentes a las tareas Execute SQL / Data Flow del paquete
-    original que corren sobre un Connection Manager)."""
+    original que corren sobre un Connection Manager OLE DB)."""
 
     def __init__(self, conn: pyodbc.Connection, batch_size: int = 5000) -> None:
         self._conn = conn
         self._batch_size = batch_size
 
     def execute_script(self, sql: str, params: Sequence[Any] | None = None) -> None:
-        """Ejecuta un script T-SQL completo (una o mas sentencias, sin 'GO')
-        como un unico batch. Equivalente a un Execute SQL Task del paquete
-        original (incluye los que llaman procedimientos/UDFs de otra base de
-        datos del mismo servidor via nombre de 3 partes -- no se reimplementa
-        esa logica en Python, se ejecuta tal cual)."""
+        """Ejecuta un script T-SQL completo. Equivalente a un Execute SQL Task
+        simple del paquete original (TRUNCATE, UPDATE, EXEC de un SP, etc. --
+        incluye los que llaman objetos de otra base de datos del mismo
+        servidor via nombre de 3 partes, p.ej. '[CL_USUARIOS].[dbo].[SP_...]':
+        no se reimplementa esa logica en Python, se ejecuta tal cual)."""
         try:
             cursor = self._conn.cursor()
             try:
@@ -97,6 +84,26 @@ class DatabaseGateway:
                 else:
                     cursor.execute(sql)
                 self._conn.commit()
+            finally:
+                cursor.close()
+        except Exception as exc:
+            self._conn.rollback()
+            raise CargaError(f"Fallo la ejecucion del script T-SQL: {exc}") from exc
+
+    def execute_script_rowcount(self, sql: str, params: Sequence[Any] | None = None) -> int:
+        """Como execute_script, pero devuelve la cantidad de filas afectadas
+        (cursor.rowcount). Equivalente a tareas 'DELETE'/'INSERT ... SELECT'
+        cuyo resultado se quiere reportar (p.ej. 'DELETE VENTAS2 >' / 'INSERT VENAS2')."""
+        try:
+            cursor = self._conn.cursor()
+            try:
+                if params:
+                    cursor.execute(sql, tuple(params))
+                else:
+                    cursor.execute(sql)
+                filas = cursor.rowcount
+                self._conn.commit()
+                return filas if filas is not None and filas >= 0 else 0
             finally:
                 cursor.close()
         except Exception as exc:
@@ -176,10 +183,7 @@ class DatabaseGateway:
         """Equivalente a un OLE DB Destination con disposicion de error
         'IgnoreFailure': intenta el fast-load completo y, si falla, reintenta
         fila por fila descartando (y logueando) las que no se puedan
-        insertar, en vez de abortar todo el lote. Usado unicamente por el
-        Destino 'INTENCIONES LOCAL' de TBL_INTENCIONES\\INTENCIONES -- el
-        unico Data Flow de los 5 paquetes con esa disposicion (ver README,
-        Notas de fidelidad)."""
+        insertar, en vez de abortar todo el lote."""
         if df.empty:
             logger.warning("bulk_insert_ignorando_errores: DataFrame vacio para [%s].[%s]", schema, table)
             return 0
@@ -221,8 +225,7 @@ class DatabaseGateway:
         return insertadas
 
     def read_table(self, table: str, schema: str = "dbo") -> pd.DataFrame:
-        """Lee una tabla completa. Equivalente a un OLE DB Source en modo
-        tabla (AccessMode=0)."""
+        """Lee una tabla completa. Equivalente a un OLE DB Source en modo tabla."""
         try:
             cursor = self._conn.cursor()
             try:

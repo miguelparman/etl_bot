@@ -16,12 +16,12 @@ falle (fail-fast), igual que una cadena de pasos de un job SQL Agent.
         Find new records or for updating:
             DELETE BD_RETEN -> Data Flow 'BD_RETEN' -> UPDATE (corrige tilde)
 
-    USUARIOS_0300 ETL_INTENCIONES (4 Sequence Containers; CARGA BAJAS y
-    Contenedor de secuencias no dependen entre si, ambos deben terminar
-    antes de TBL_INTENCIONES)
+    USUARIOS_0300 ETL_INTENCIONES (3 Sequence Containers activos; CARGA
+    BAJAS y TBL_INTENCIONES no dependen entre si. El 4to, 'Contenedor de
+    secuencias' / 'CARGA DE USUARIOS RETENCIONES SERVIDOR CHILE'
+    (TBL_FRACTALIA_USER_RETENCIONES en Externos_Frac), se dio de baja por
+    ser un trabajo obsoleto)
         CARGA BAJAS: DELETE FIJO + DELETE MOVIL -> Data Flow 'TBL_CH_BAJAS'
-        Contenedor de secuencias: TRUNCATE -> Data Flow 'CARGA DE USUARIOS
-            RETENCIONES SERVIDOR CHILE'
         TBL_INTENCIONES: DELETE -> Data Flow 'INTENCIONES' (IgnoreFailure)
         TABULANDO INTENCIONES: TRUNCATE+TEMP_01 -> TRUNCATE+TEMP_02 ->
             TRUNCATE+TEMP_03 -> TRUNCATE+TEMP_04 -> DELETE+INTENCIONES_TAB
@@ -49,6 +49,7 @@ from db import DatabaseGateway
 from exceptions import PipelineError
 from extraccion import extractor
 from models import Periodo, ResultadoPipeline, ResultadoSubPipeline
+from sharepoint.reader import SharePointCsvReader
 from transformacion import transformer
 
 logger = logging.getLogger("usuarios")
@@ -56,17 +57,22 @@ logger = logging.getLogger("usuarios")
 
 @dataclass
 class UsuariosPipeline:
-    """Orquesta los 5 sub-pipelines. Recibe un DatabaseGateway por cada uno
-    de los 2 Connection Managers presentes en todos los .dtsx originales."""
+    """Orquesta los 5 sub-pipelines. Recibe el DatabaseGateway de
+    CL_USUARIOS (unico destino restante de los 5 .dtsx) y el
+    SharePointCsvReader que reemplaza a Externos_Frac como ORIGEN (ver
+    extraccion/extractor.py). Externos_Frac ya no se usa para nada: como
+    origen migro a SharePoint, y su unico destino (TBL_FRACTALIA_USER_
+    RETENCIONES, via 'CARGA DE USUARIOS RETENCIONES SERVIDOR CHILE') se dio
+    de baja por ser un trabajo obsoleto."""
 
     db_cl_usuarios: DatabaseGateway
-    db_externos_frac: DatabaseGateway
+    sharepoint_reader: SharePointCsvReader
 
     def ejecutar_parque(self, periodo: Periodo) -> ResultadoSubPipeline:
         """USUARIOS_0101 Parque.dtsx: DELETE -> Data Flow 'PARQUE'."""
         nombre = "parque"
         self._step(nombre, "DELETE", lambda: loader.eliminar_parque(self.db_cl_usuarios, periodo))
-        df = self._step(nombre, "PARQUE / extraccion", lambda: extractor.extraer_parque(self.db_externos_frac, periodo))
+        df = self._step(nombre, "PARQUE / extraccion", lambda: extractor.extraer_parque(self.sharepoint_reader, periodo))
         filas = self._step(nombre, "PARQUE / carga", lambda: loader.cargar_parque(self.db_cl_usuarios, df))
         logger.info("[parque] Finalizado: %s filas cargadas en ParqueTCH.", filas)
         return ResultadoSubPipeline(nombre=nombre, filas_por_paso={"PARQUE": filas})
@@ -81,7 +87,7 @@ class UsuariosPipeline:
 
         self._step(nombre, "BAJAS FRAUDE / DELETE", lambda: loader.eliminar_bajas_fraude(self.db_cl_usuarios, periodo))
         df_fraude = self._step(
-            nombre, "BAJAS FRAUDE / extraccion", lambda: extractor.extraer_bajas_fraude(self.db_externos_frac, periodo)
+            nombre, "BAJAS FRAUDE / extraccion", lambda: extractor.extraer_bajas_fraude(self.sharepoint_reader, periodo)
         )
         filas_por_paso["TBL_SERVCH_BAJAS_FRAUDE"] = self._step(
             nombre, "BAJAS FRAUDE / carga", lambda: loader.cargar_bajas_fraude(self.db_cl_usuarios, df_fraude)
@@ -93,7 +99,7 @@ class UsuariosPipeline:
         df_alta = self._step(
             nombre,
             "BAJAS POR ALTA / extraccion",
-            lambda: extractor.extraer_bajas_por_alta(self.db_externos_frac, periodo),
+            lambda: extractor.extraer_bajas_por_alta(self.sharepoint_reader, periodo),
         )
         filas_por_paso["TBL_SERVCH_BAJAS_POR_ALTA_FO"] = self._step(
             nombre, "BAJAS POR ALTA / carga", lambda: loader.cargar_bajas_por_alta(self.db_cl_usuarios, df_alta)
@@ -103,7 +109,7 @@ class UsuariosPipeline:
             nombre, "BD_RETEN / DELETE BD_RETEN", lambda: loader.eliminar_bd_reten(self.db_cl_usuarios, periodo)
         )
         df_bd_reten = self._step(
-            nombre, "BD_RETEN / extraccion", lambda: extractor.extraer_bd_reten(self.db_externos_frac, periodo)
+            nombre, "BD_RETEN / extraccion", lambda: extractor.extraer_bd_reten(self.sharepoint_reader, periodo)
         )
         filas_por_paso["BD_RETEN"] = self._step(
             nombre, "BD_RETEN / carga", lambda: loader.cargar_bd_reten(self.db_cl_usuarios, df_bd_reten)
@@ -116,10 +122,10 @@ class UsuariosPipeline:
         return ResultadoSubPipeline(nombre=nombre, filas_por_paso=filas_por_paso)
 
     def ejecutar_intenciones(self, periodo: Periodo) -> ResultadoSubPipeline:
-        """USUARIOS_0300 ETL_INTENCIONES.dtsx: 4 Sequence Containers.
-        'CARGA BAJAS' y 'Contenedor de secuencias' no dependen entre si en el
-        .dtsx original (ambos deben terminar antes de 'TBL_INTENCIONES'); se
-        corren aqui en el orden en que aparecen en el paquete."""
+        """USUARIOS_0300 ETL_INTENCIONES.dtsx: 3 Sequence Containers activos
+        ('Contenedor de secuencias' se dio de baja, ver docstring de la
+        clase). 'CARGA BAJAS' no depende de 'TBL_INTENCIONES' en el .dtsx
+        original; se corren aqui en el orden en que aparecen en el paquete."""
         nombre = "intenciones"
         filas_por_paso: dict[str, int] = {}
 
@@ -130,7 +136,7 @@ class UsuariosPipeline:
         )
         df_fijo = self._step(
             nombre, "CARGA BAJAS / TBL_CH_BAJAS (fijo) / extraccion",
-            lambda: extractor.extraer_bajas_fijo(self.db_externos_frac, periodo),
+            lambda: extractor.extraer_bajas_fijo(self.sharepoint_reader, periodo),
         )
         filas_por_paso["TBL_CH_BAJAS_FIJO"] = self._step(
             nombre, "CARGA BAJAS / TBL_CH_BAJAS (fijo) / carga",
@@ -138,31 +144,17 @@ class UsuariosPipeline:
         )
         df_movil = self._step(
             nombre, "CARGA BAJAS / TBL_CH_BAJAS (movil) / extraccion",
-            lambda: extractor.extraer_bajas_movil(self.db_externos_frac, periodo),
+            lambda: extractor.extraer_bajas_movil(self.sharepoint_reader, periodo),
         )
         filas_por_paso["TBL_CH_BAJAS_MOVIL"] = self._step(
             nombre, "CARGA BAJAS / TBL_CH_BAJAS (movil) / carga",
             lambda: loader.cargar_bajas_movil(self.db_cl_usuarios, df_movil),
         )
 
-        # --- Contenedor de secuencias ---
-        self._step(
-            nombre, "Contenedor de secuencias / TRUNCATE",
-            lambda: loader.truncar_usuarios_retenciones(self.db_externos_frac),
-        )
-        df_usuarios = self._step(
-            nombre, "Contenedor de secuencias / extraccion",
-            lambda: extractor.extraer_usuarios_retenciones(self.db_cl_usuarios),
-        )
-        filas_por_paso["TBL_FRACTALIA_USER_RETENCIONES"] = self._step(
-            nombre, "Contenedor de secuencias / carga",
-            lambda: loader.cargar_usuarios_retenciones(self.db_externos_frac, df_usuarios),
-        )
-
         # --- TBL_INTENCIONES ---
         self._step(nombre, "TBL_INTENCIONES / DELETE", lambda: loader.eliminar_intenciones(self.db_cl_usuarios, periodo))
         df_v2 = self._step(
-            nombre, "TBL_INTENCIONES / extraccion", lambda: extractor.extraer_intenciones_v2(self.db_externos_frac, periodo)
+            nombre, "TBL_INTENCIONES / extraccion", lambda: extractor.extraer_intenciones_v2(self.sharepoint_reader, periodo)
         )
         filas_por_paso["INTENCIONES"] = self._step(
             nombre, "TBL_INTENCIONES / carga", lambda: loader.cargar_intenciones_local(self.db_cl_usuarios, df_v2)
@@ -215,7 +207,7 @@ class UsuariosPipeline:
         self._step(nombre, "Loading to the Staging / DELETE", lambda: loader.eliminar_item_amdocs(self.db_cl_usuarios, periodo))
         df = self._step(
             nombre, "Loading to the Staging / INTEN_AMDOCS / extraccion",
-            lambda: extractor.extraer_item_amdocs(self.db_externos_frac, periodo),
+            lambda: extractor.extraer_item_amdocs(self.sharepoint_reader, periodo),
         )
         filas = self._step(
             nombre, "Loading to the Staging / INTEN_AMDOCS / carga",
@@ -252,7 +244,7 @@ class UsuariosPipeline:
         nombre = "saip"
 
         self._step(nombre, "TRUNCATE SAIP", lambda: loader.truncar_saip(self.db_cl_usuarios))
-        df = self._step(nombre, "SAIP / extraccion", lambda: extractor.extraer_saip(self.db_externos_frac))
+        df = self._step(nombre, "SAIP / extraccion", lambda: extractor.extraer_saip(self.sharepoint_reader))
         filas = self._step(nombre, "SAIP / carga", lambda: loader.cargar_saip(self.db_cl_usuarios, df))
         self._step(
             nombre,

@@ -23,10 +23,20 @@ una en su propia carpeta — sin capas domain/application/infrastructure ni
 interfaces `Protocol` de por medio:
 
 ```
+sharepoint/
+├── auth.py              # Token Microsoft Graph (OAuth2 client credentials)
+├── client.py             # Resuelve site/drive y descarga archivos (Graph)
+└── reader.py             # CSV -> DataFrame (reemplaza, como ORIGEN, al
+                          # Connection Manager OLE DB 'Externos_Frac')
+
 extraccion/
-└── extractor.py        # un extraer_xxx(db, periodo) por Origen OLE DB
-                         # parametrizado; incluye la emulación de los
-                         # componentes 'Data Conversion'/'Conversión de datos'
+└── extractor.py        # un extraer_xxx(reader, periodo) por Origen: lee el
+                         # CSV de SharePoint y replica en pandas el filtro/
+                         # JOIN/dedup que antes hacia la consulta SQL contra
+                         # Externos_Frac (ver sql.py para la consulta
+                         # original, conservada como referencia); incluye la
+                         # emulación de los componentes 'Data Conversion'/
+                         # 'Conversión de datos'.
 
 validacion/
 └── validator.py        # ninguno de los 5 .dtsx tiene una tarea de calidad
@@ -39,15 +49,20 @@ transformacion/
                           # destino): se ejecutan como script T-SQL literal
 
 carga/
-└── loader.py            # deletes/truncados y Destinos OLE DB
+└── loader.py            # deletes/truncados y Destinos OLE DB (todos en
+                          # CL_USUARIOS)
 
 pipeline.py              # UsuariosPipeline: un 'ejecutar_xxx' por paquete
                           # .dtsx + 'ejecutar_todo' (orden 0101→0201→0300→0301→0302)
 
 models.py                # Periodo (YYYYMM), ResultadoSubPipeline/ResultadoPipeline
 exceptions.py            # ExtraccionError, ValidacionError, CargaError, PipelineError
-mappings.py               # tablas/columnas/anchos de truncamiento (constantes de negocio)
+mappings.py               # tablas/columnas/anchos de truncamiento, nombres de
+                          # archivo CSV en SharePoint (constantes de negocio)
 sql.py                    # sentencias T-SQL migradas literalmente, por paquete
+                          # (los SELECT que leian Externos_Frac ya no se
+                          # ejecutan, quedan solo como referencia -- ver
+                          # extraccion/extractor.py)
 
 db.py                     # DatabaseGateway (pyodbc) + fábrica de conexiones
                           # (SQL Server auth o Windows integrada según el Connection Manager)
@@ -65,21 +80,45 @@ conoce las 4 capas a la vez; `main.py` es el único que además conoce `db.py`.
 
 ## Conexiones (Connection Managers originales)
 
-Los 5 `.dtsx` comparten los mismos 2 Connection Managers OLE DB:
+Los 5 `.dtsx` originales compartían los mismos 2 Connection Managers OLE DB:
 
 | Connection Manager | Servidor | Base de datos | Autenticación |
 |---|---|---|---|
 | `CL_USUARIOS` (`LocalHost.CL_USUARIOS` / `162.CL_USUARIOS`) | `172.17.0.162` | `CL_USUARIOS` | SQL Server (`mparedes`) |
 | `Externos_Frac` (`223.Externos_Frac...`) | `sqlclu01lis01.tchile.local` | `Externos_Frac` | Windows integrada (SSPI) |
 
-`CL_USUARIOS` es siempre el destino final; `Externos_Frac` es siempre el
+`CL_USUARIOS` era siempre el destino final; `Externos_Frac` era siempre el
 origen (salvo el Data Flow "CARGA DE USUARIOS RETENCIONES SERVIDOR CHILE" de
-Intenciones, que va en sentido contrario: origen `CL_USUARIOS`/`CL_DATA`,
+Intenciones, que iba en sentido contrario: origen `CL_USUARIOS`/`CL_DATA`,
 destino `Externos_Frac`). Varias tareas SQL hacen referencias cross-database
 de 3 partes contra el **mismo servidor** que `CL_USUARIOS` (172.17.0.162):
 `SERVICIOS_GENERALES` (UDFs de fecha/días hábiles y limpieza XML, y el
 stored procedure `SP_RETENCIONES_EFECTIVIDAD_ASESOR`) y `CL_DATA` (vista de
 usuarios).
+
+**`Externos_Frac` ya no se usa para nada** (ni como origen ni como destino),
+por 2 cambios distintos:
+
+1. **Origen migrado a SharePoint (Microsoft Graph):** todos los orígenes que
+   leían `Externos_Frac` se reemplazaron por CSV publicados en SharePoint,
+   uno por tabla, con el mismo nombre que la tabla que reemplazan
+   (`pqe_fijtot2023.csv`, `BAJAS_FRAUDE.csv`, `BD_RETEN_V2.csv`, etc. — ver
+   `mappings.py`). El acceso es via un App Registration de Microsoft Graph
+   (`Sites.Selected` sobre el sitio `ReportingFractalia`, carpeta `Data
+   Reporting/REPOSITORIOS DE CRUDOS/CHILE/BPOCHIPE/13 SERVIDOR CHILE`) —
+   idéntico al patrón ya usado en `30_parque` (que lee el mismo folder para
+   `pqe_fijtot2023.csv`/`pqe_movtot2023.csv`). La lógica de negocio de cada
+   consulta original (filtros, JOINs, dedup por `ROW_NUMBER()`) se preserva
+   tal cual, ahora en pandas — ver `extraccion/extractor.py` y `sql.py`
+   (que conserva los `SELECT` originales, ya no ejecutados, como referencia
+   literal).
+2. **Destino dado de baja por obsoleto:** el Sequence Container "Contenedor
+   de secuencias" (Data Flow "CARGA DE USUARIOS RETENCIONES SERVIDOR
+   CHILE", que truncaba y cargaba `TBL_FRACTALIA_USER_RETENCIONES` en
+   `Externos_Frac` desde `CL_DATA.VIEW_USUARIOS_CON_DETALLE`) se eliminó por
+   completo del sub-pipeline `intenciones` — a pedido, ese trabajo ya no es
+   necesario. No queda ninguna conexión SQL Server hacia `Externos_Frac`;
+   `CL_USUARIOS` es el único destino de los 5 paquetes.
 
 ## Proceso original — Control Flow de cada paquete
 
@@ -117,15 +156,22 @@ expresiones) — ningún paquete tiene ramas condicionales basadas en
 expresiones, Script Tasks, Conditional Split, Lookup, Merge Join,
 Aggregate ni Event Handlers con lógica propia.
 
+> **Nota:** el diagrama de arriba documenta el Control Flow **original** de
+> los 5 `.dtsx`, tal cual eran en SSIS. En esta migración a Python, el
+> Sequence Container "Contenedor de secuencias" de `USUARIOS_0300
+> ETL_INTENCIONES` (TRUNCATE + Data Flow "CARGA DE USUARIOS RETENCIONES
+> SERVIDOR CHILE") se dio de baja por completo — ver "Conexiones" arriba.
+> `pipeline.ejecutar_intenciones()` corre hoy solo 3 Sequence Containers
+> (`CARGA BAJAS`, `TBL_INTENCIONES`, `TABULANDO INTENCIONES`), no 4.
+
 ## Requisitos
 
 - Python 3.11+
 - [ODBC Driver 18 for SQL Server](https://learn.microsoft.com/sql/connect/odbc/download-odbc-driver-for-sql-server)
-- Acceso de red a `172.17.0.162` (`CL_USUARIOS`) y a
-  `sqlclu01lis01.tchile.local` (`Externos_Frac`)
-- Para `Externos_Frac` (autenticación de Windows integrada): el proceso debe
-  correr bajo una cuenta de dominio con acceso a esa base — no hay usuario
-  ni contraseña que configurar para esa conexión.
+- Acceso de red a `172.17.0.162` (`CL_USUARIOS`, único destino SQL Server)
+- Un App Registration de Microsoft Entra ID con permiso `Sites.Selected`
+  concedido sobre el sitio `ReportingFractalia` (Graph), para leer los CSV
+  origen en SharePoint — mismo App Registration que usa `30_parque`.
 
 ## Instalación
 
@@ -136,8 +182,9 @@ pip install -r requirements-dev.txt
 copy .env.example .env
 ```
 
-Complete `.env` con la contraseña real de `CL_USUARIOS_DB_USER` y el
-periodo a procesar (ver `.env.example`).
+Complete `.env` con la contraseña real de `CL_USUARIOS_DB_USER`, las
+credenciales del App Registration de Microsoft Graph (`TENANT_ID`,
+`CLIENT_ID`, `CLIENT_SECRET`) y el periodo a procesar (ver `.env.example`).
 
 ## Ejecución
 
@@ -157,36 +204,58 @@ python main.py                                      # usa PERIODO de .env
 pytest
 ```
 
-Los tests usan un *fake* de `DatabaseGateway` (`tests/unit/fakes.py`), por lo
-que no requieren una base de datos real. Cubren, por paquete:
+Los tests usan un *fake* de `DatabaseGateway` y de `SharePointCsvReader`
+(`tests/unit/fakes.py`), por lo que no requieren una base de datos ni una
+conexión Graph/SharePoint reales. Cubren, por paquete:
 
-- **Parque**: parámetros del DELETE y del SELECT (los 3 `?` del query
-  original, todos ligados a `Periodo`).
-- **Retenciones**: los 3 sub-flujos independientes; la emulación del
+- **Parque**: filtro por el mes anterior al periodo (equivalente a
+  `FORMAT(DATEADD(MONTH,-1,...),'yyyyMM')`); el `CASE` de `segme`/`tpo_prod`/
+  `SERVICIO`; el `LEFT JOIN` con `RUT_marca_cartera` (distinto para FIJO
+  -recorta el DV del rut- y MOVIL -match exacto por `rutcli`-); la proyección
+  del periodo máximo presente al periodo siguiente (`ultimo_parque`,
+  incluido el rollover de diciembre a enero).
+- **Retenciones**: los 3 sub-flujos independientes; el dedup por
+  `ROW_NUMBER()` de `BD_RETEN` (mismas claves de partición, sin desempate
+  real -- se documenta la ambigüedad preservada); la emulación del
   componente `Data Conversion` de `BD_RETEN` (descarta `ROWNO`/`motivo`,
   castea `Evaluacion`/`last_modified`, aborta si una columna excede su
   ancho — `FailComponent`); las 2 sentencias de corrección de tilde.
-- **Intenciones**: los 4 Sequence Containers en orden; el truncamiento
-  `FailComponent` de `CASE_ID_NUMBER` a 15; la carga `IgnoreFailure` de
-  `INTENCIONES LOCAL`; la cadena `TABULANDO INTENCIONES` ejecutada como SQL
-  literal.
-- **Item_amdocs**: el descarte de `rutcli` y el renombre `ROWNO`→`Evaluacion`;
-  la disposición `IgnoreFailure` (casteos tolerantes que no abortan la fila,
-  a diferencia de Retenciones/Intenciones); el orden exacto de los 9 UPDATE.
+- **Intenciones**: los 3 Sequence Containers activos en orden (el 4to,
+  "Contenedor de secuencias", se dio de baja — ver "Conexiones" arriba); el
+  filtro de
+  `INTENCIONES_V2` por año/mes derivado de `CASE_OPEN_TIME` (no una columna
+  de periodo plana); el truncamiento `FailComponent` de `CASE_ID_NUMBER` a
+  15; la carga `IgnoreFailure` de `INTENCIONES LOCAL`; la cadena `TABULANDO
+  INTENCIONES` ejecutada como SQL literal (sin cambios, sigue siendo
+  origen+destino en `CL_USUARIOS`).
+- **Item_amdocs**: el dedup por `ROW_NUMBER()` sobre `case_idnum` (ordenado
+  por `case_optim`, sí desempata de forma determinista); el parseo de
+  `case_cltim` (formato origen tipo Oracle, deducido de los índices de
+  `SUBSTRING`/`RIGHT` del `.dtsx`); el descarte de `rutcli` y el renombre
+  `ROWNO`→`Evaluacion`; la disposición `IgnoreFailure` (casteos tolerantes
+  que no abortan la fila, a diferencia de Retenciones/Intenciones); el orden
+  exacto de los 9 UPDATE.
 - **SAIP**: descarte de `fec_saip_a`/`fec_saip_b`; conversión de
-  `fec_ingr`/`FECHA` a fecha; orden TRUNCATE → extracción → carga → EXEC SP.
+  `fec_ingr`/`FECHA` a fecha; el filtro de `fec_saip_a` >= 2022-01-01 como
+  comparación de FECHAS real (el `.dtsx` original comparaba texto
+  `dd/MM/yyyy` contra un literal ISO, un bug que excluía los días 01-20 de
+  cualquier mes/año -- corregido a pedido, con test dedicado); orden
+  TRUNCATE → extracción → carga → EXEC SP.
 - **`test_pipeline.py`**: orden de ejecución de cada sub-pipeline y de
   `ejecutar_todo` (los 5, en el orden declarado); que un fallo en cualquier
   paso se propaga como `PipelineError` sin continuar con los pasos
   siguientes (fail-fast).
 
-No hay forma de ejecutar contra las bases reales en este entorno (las
-contraseñas del `.dtsx` original están cifradas por usuario/máquina —DPAPI—
-y son irrecuperables, y `Externos_Frac` requiere una cuenta de dominio de la
-red de Chile). **Antes de operar en producción**, se debe validar la
-equivalencia final (conteos de filas, diffs de tablas) corriendo ambos
-procesos —el `.dtsx` original y este proyecto— contra el mismo periodo en un
-entorno de prueba.
+No hay forma de ejecutar contra las bases/SharePoint reales en este entorno
+(las contraseñas del `.dtsx` original están cifradas por usuario/máquina
+—DPAPI— y son irrecuperables, y el App Registration de Microsoft Graph
+requiere credenciales propias). **Antes de operar en producción**, se
+debe validar la equivalencia final (conteos de filas, diffs de tablas)
+corriendo ambos procesos —el `.dtsx` original y este proyecto— contra el
+mismo periodo en un entorno de prueba, y confirmar contra los archivos
+reales el delimitador de los CSV (se asume `;` por consistencia con
+`30_parque`, ver `mappings.CSV_DELIMITER`) y que sus columnas coinciden con
+las que `extraccion/extractor.py` espera.
 
 ## Notas de fidelidad con los paquetes SSIS originales
 
@@ -195,6 +264,34 @@ entorno de prueba.
   fuera de la máquina original. Se reemplazó por una variable de entorno en
   `.env` (no versionado). `Externos_Frac` no tenía contraseña embebida
   (Windows integrada).
+- **Origen migrado a SharePoint (Microsoft Graph)**: los 9 Orígenes OLE DB
+  que leían `Externos_Frac` se reemplazaron por CSV en SharePoint, con la
+  lógica de filtro/JOIN/dedup de cada consulta portada literalmente a
+  pandas (ver `extraccion/extractor.py`; `sql.py` conserva los `SELECT`
+  originales, ya no ejecutados, como referencia). Una ambigüedad propia del
+  SQL original se preserva explícitamente en vez de "corregirse": el
+  `ROW_NUMBER() OVER(... ORDER BY periodo)` de `BD_RETEN` particiona por una
+  clave que incluye a `periodo`, por lo que el `ORDER BY` no desempata nada
+  — qué fila "gana" no estaba definido en el `.dtsx` original tampoco, aquí
+  se resuelve por orden de aparición en el CSV (sort estable).
+- **"Contenedor de secuencias" (Intenciones) dado de baja, no migrado**: a
+  diferencia del resto de esta lista (que documenta comportamiento
+  preservado), este Sequence Container completo — TRUNCATE + Data Flow
+  "CARGA DE USUARIOS RETENCIONES SERVIDOR CHILE" (`CL_DATA.
+  VIEW_USUARIOS_CON_DETALLE` → `TBL_FRACTALIA_USER_RETENCIONES` en
+  `Externos_Frac`) — se eliminó del sub-pipeline `intenciones` a pedido, por
+  ser un trabajo obsoleto. No quedan `loader.truncar_usuarios_retenciones`/
+  `cargar_usuarios_retenciones` ni `extractor.extraer_usuarios_retenciones`;
+  sus constantes SQL tambien se eliminaron de `sql.py` (no se conservaron
+  como referencia, a diferencia de los `SELECT` migrados a SharePoint).
+- **Filtro de `fec_saip_a` en SAIP corregido (no preservado)**: el `.dtsx`
+  original comparaba el texto `dd/MM/yyyy` de `fec_saip_a` contra un literal
+  ISO (`'2022-01-01'`), lo que por un bug de comparación lexicográfica
+  excluía los días 01-20 de cualquier mes/año sin relación con la fecha
+  real. A diferencia del resto de las "Notas de fidelidad" de este archivo,
+  este caso se corrigió a pedido a una comparación de FECHAS real (ver
+  `extraccion/extractor.py::extraer_saip` y
+  `test_extraer_saip_filtra_por_fecha_real_no_por_comparacion_de_texto`).
 - **Data Flows con origen y destino en la misma instancia SQL Server se
   ejecutan como script T-SQL literal, no como extracción+carga en Python**:
   toda la cadena `TABULANDO INTENCIONES` (`TEMP_01`→`TEMP_04`→`INTENCIONES_TAB`,
@@ -269,8 +366,3 @@ entorno de prueba.
   y se omite, igual que los `GO` de los 2 `UPDATE` de corrección de tilde de
   `BD_RETEN` (que sí se ejecutan como 2 sentencias independientes porque son
   2 `UPDATE` distintos, no 1 solo con `GO` de por medio).
-- **`CARGA BAJAS`/`Contenedor de secuencias` (Intenciones) no tenían
-  precedencia entre sí** en el `.dtsx` original (podían correr en paralelo);
-  aquí se ejecutan secuencialmente, en el orden en que aparecen en el
-  paquete — no hay dependencia de datos entre ambos, solo se simplifica la
-  orquestación.

@@ -1,23 +1,7 @@
-[build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "etl-chile"
-version = "1.0.0"
-description = "Migracion a Python de los paquetes SSIS CROSS 0101 SSIS_CL_Senalizaciones.dtsx y CROSS 0102 SSIS_CL_Ventas.dtsx"
-requires-python = ">=3.11"
-
-[tool.setuptools.packages.find]
-where = ["src"]
-
 [tool.pytest.ini_options]
-pythonpath = ["src"]
-testpaths = ["tests"]
-
-[tool.black]
-line-length = 100
-
-[tool.ruff]
-line-length = 100
-src = ["src"]
+# "src layout": el codigo vive en src/ventas/ (config.py, db.py, mappings.py,
+# etc.), no en la raiz del proyecto -- se agrega al pythonpath para que los
+# tests (y main.py/copiar_funnel_ventas.py/exportar_senhalizaciones_csv.py,
+# que hacen lo mismo a mano via sys.path.insert) puedan seguir haciendo
+# 'import mappings', 'from db import DatabaseGateway', etc. sin cambios.
+pythonpath = ["src/ventas"]

@@ -1,9 +1,13 @@
 """Arma la configuracion a partir de variables de entorno (archivo '.env').
 Ninguna credencial vive en el codigo ni en este repositorio.
 
-Equivalente a los 2 Connection Managers OLE DB (CL_USUARIOS y Externos_Frac)
-y a la variable de paquete User::Periodo / User::Periodo01, presentes por
-igual en los 5 .dtsx originales.
+Equivalente al Connection Manager OLE DB 'CL_USUARIOS' (unico destino
+restante de los 5 .dtsx originales) y a la variable de paquete
+User::Periodo / User::Periodo01 -- mas la configuracion de Microsoft Graph
+que reemplaza a 'Externos_Frac' como ORIGEN (ver sharepoint/, extraccion/
+extractor.py). 'Externos_Frac' ya no se usa para nada: como origen migro a
+SharePoint, y su unico destino (TBL_FRACTALIA_USER_RETENCIONES) se dio de
+baja por obsoleto -- no queda ninguna conexion SQL Server hacia esa base.
 """
 
 from __future__ import annotations
@@ -35,9 +39,25 @@ class DbSettings:
 
 
 @dataclass(frozen=True)
+class SharePointSettings:
+    """Reemplaza, como ORIGEN, al Connection Manager OLE DB 'Externos_Frac':
+    App Registration de Microsoft Graph con permiso Sites.Selected sobre el
+    sitio ReportingFractalia. Identico al patron de 30_parque/config.py."""
+
+    tenant_id: str
+    client_id: str
+    client_secret: str
+    hostname: str
+    site_path: str
+    drive_name: str
+    folder_path: str
+    timeout_ms: int = 120000
+
+
+@dataclass(frozen=True)
 class Settings:
     db_cl_usuarios: DbSettings  # Connection Manager 'LocalHost.CL_USUARIOS' / '162.CL_USUARIOS' (auth SQL)
-    db_externos_frac: DbSettings  # Connection Manager '223.Externos_Frac...' (auth Windows integrada)
+    sharepoint: SharePointSettings  # ORIGEN: reemplaza las lecturas que antes iban contra Externos_Frac
     periodo: Periodo | None  # User::Periodo / User::Periodo01
     batch_size: int = 5000
     log_file: Path = Path("usuarios.log")
@@ -79,21 +99,22 @@ def cargar_configuracion(base_dir: Path, periodo: str | None = None) -> Settings
         encrypt=encrypt,
         trust_server_certificate=trust_cert,
     )
-    db_externos_frac = DbSettings(
-        server=_require_env("EXTERNOS_FRAC_DB_SERVER"),
-        database=os.getenv("EXTERNOS_FRAC_DB_NAME", "Externos_Frac"),
-        driver=driver,
-        user=None,
-        password=None,
-        encrypt=encrypt,
-        trust_server_certificate=trust_cert,
+    sharepoint = SharePointSettings(
+        tenant_id=_require_env("TENANT_ID"),
+        client_id=_require_env("CLIENT_ID"),
+        client_secret=_require_env("CLIENT_SECRET"),
+        hostname=os.getenv("SHAREPOINT_HOSTNAME", "fractaliagroup.sharepoint.com"),
+        site_path=_require_env("SHAREPOINT_SITE_PATH"),
+        drive_name=_require_env("SHAREPOINT_DRIVE_NAME"),
+        folder_path=_require_env("SHAREPOINT_FOLDER_PATH"),
+        timeout_ms=_env_int("GRAPH_TIMEOUT", 120000),
     )
 
     valor_periodo = periodo if periodo is not None else os.getenv("PERIODO")
 
     return Settings(
         db_cl_usuarios=db_cl_usuarios,
-        db_externos_frac=db_externos_frac,
+        sharepoint=sharepoint,
         periodo=Periodo(valor_periodo) if valor_periodo else None,
         batch_size=_env_int("BATCH_SIZE", 5000),
         log_file=base_dir / "usuarios.log",

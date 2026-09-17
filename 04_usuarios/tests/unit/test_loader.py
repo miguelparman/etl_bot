@@ -91,19 +91,6 @@ def test_cargar_bajas_movil_inserta_en_tbl_ch_bajas_movil():
     pd.testing.assert_frame_equal(db.inserted[mappings.INTENCIONES_BAJAS_MOVIL_TABLE], df)
 
 
-def test_truncar_usuarios_retenciones_trunca_en_externos_frac():
-    db_externos_frac = FakeDatabaseGateway()
-    loader.truncar_usuarios_retenciones(db_externos_frac)
-    assert db_externos_frac.truncated_tables == [mappings.INTENCIONES_USUARIOS_RETENCIONES_TABLE]
-
-
-def test_cargar_usuarios_retenciones_inserta_en_externos_frac():
-    db_externos_frac = FakeDatabaseGateway()
-    df = pd.DataFrame([{"Believe": "x", "Programa": "retencion chile", "Periodo": 202608}])
-    assert loader.cargar_usuarios_retenciones(db_externos_frac, df) == 1
-    pd.testing.assert_frame_equal(db_externos_frac.inserted[mappings.INTENCIONES_USUARIOS_RETENCIONES_TABLE], df)
-
-
 def test_eliminar_intenciones_ejecuta_el_delete_con_periodo():
     db = FakeDatabaseGateway()
     loader.eliminar_intenciones(db, Periodo("202608"))

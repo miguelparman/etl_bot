@@ -1,5 +1,8 @@
 """Carga: deletes/truncados y Destinos OLE DB de los 5 paquetes
-USUARIOS_*.dtsx."""
+USUARIOS_*.dtsx. Todos los destinos viven en CL_USUARIOS -- la carga de
+'CARGA DE USUARIOS RETENCIONES SERVIDOR CHILE' (Externos_Frac,
+TBL_FRACTALIA_USER_RETENCIONES) se dio de baja por ser un trabajo obsoleto,
+ver pipeline.py."""
 
 from __future__ import annotations
 
@@ -94,18 +97,6 @@ def eliminar_bajas_movil(db_cl_usuarios: DatabaseGateway, periodo: Periodo) -> N
 def cargar_bajas_movil(db_cl_usuarios: DatabaseGateway, df: pd.DataFrame) -> int:
     """Destino OLE DB del pipe 'BAJAS_MOVIL' del Data Flow 'TBL_CH_BAJAS'."""
     return db_cl_usuarios.bulk_insert(mappings.INTENCIONES_BAJAS_MOVIL_TABLE, df)
-
-
-def truncar_usuarios_retenciones(db_externos_frac: DatabaseGateway) -> None:
-    """Tarea 'TRUNCATE' de "Contenedor de secuencias"
-    (USUARIOS_0300 ETL_INTENCIONES.dtsx). Conexion: Externos_Frac."""
-    db_externos_frac.truncate_table(mappings.INTENCIONES_USUARIOS_RETENCIONES_TABLE)
-
-
-def cargar_usuarios_retenciones(db_externos_frac: DatabaseGateway, df: pd.DataFrame) -> int:
-    """Destino OLE DB 'TBL_FRACTALIA_USER_RETENCIONES' (Externos_Frac) del
-    Data Flow 'CARGA DE USUARIOS RETENCIONES SERVIDOR CHILE'."""
-    return db_externos_frac.bulk_insert(mappings.INTENCIONES_USUARIOS_RETENCIONES_TABLE, df)
 
 
 def eliminar_intenciones(db_cl_usuarios: DatabaseGateway, periodo: Periodo) -> None:

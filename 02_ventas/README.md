@@ -1,126 +1,281 @@
-# ETL Chile — Ventas & Señalizaciones
+# Ventas / Señalizaciones — Migración SSIS → Python
 
-Migración a Python (arquitectura Clean/Layered) de dos paquetes SSIS:
+Migración a Python (arquitectura modular por componentes) de 2 paquetes
+SSIS de Chile:
 
-| Paquete SSIS original | Pipeline Python |
-|---|---|
-| `CROSS 0101 SSIS_CL_Senalizaciones.dtsx` | `SenalizacionesPipeline` |
-| `CROSS 0102 SSIS_CL_Ventas.dtsx` | `VentasPipeline` |
+- **`CROSS 0101 SSIS_CL_Senalizaciones.dtsx`**: carga el funnel de
+  señalizaciones (formulario de venta cruzada) hacia `CL_USUARIOS`.
+- **`CROSS 0102 SSIS_CL_Ventas.dtsx`**: carga el funnel de ventas
+  cross-selling (base, comisiones, metas, consolidado `TBL_FUNNEL_VENTAS2`)
+  hacia el mismo servidor.
 
-El paquete de Señalizaciones invocaba, vía **Execute Process Task**, un script
-Python externo (`Ch_Senhalizaciones.py`, en `02_Cross/`) que descargaba un CSV
-publicado de Google Sheets. Esa dependencia se migró como adaptador de
-infraestructura: [`google_sheets_csv_downloader.py`](src/etl_chile/infrastructure/external/google_sheets_csv_downloader.py).
+Se ejecutan **en ese orden** (0101 antes que 0102): Ventas depende de que
+`TBL_FUNNEL_SENHALIZACIONES_DNI` ya tenga datos frescos, y ese es uno de los
+efectos de correr Señalizaciones primero.
+
+El origen cambió: en vez de archivos de red local (`D:\IRISCENE
+ENGINEERING CORPORATION SLU\BPO - Insumos\...`) y una descarga puntual de
+Google Drive, ahora se lee **el mismo archivo publicado en SharePoint**
+(carpeta `07 CROSS`), vía Microsoft Graph.
 
 ## Arquitectura
 
+**"src layout"**: en la raíz del proyecto solo quedan los archivos que
+importan de entrada — `README.md`, `.gitignore`, `.env.example`,
+`requirements*.txt`, `pyproject.toml` y los puntos de entrada (`main.py`,
+`copiar_funnel_ventas.py`, `exportar_senhalizaciones_csv.py`). Todo el
+código vive en `src/ventas/`, y ahí sigue siendo modular por componentes,
+dividido en 4 capas que replican 1:1 las etapas del proceso original
+(extracción, validación, transformación, carga), cada una en su propia
+carpeta — sin capas domain/application/infrastructure ni interfaces
+`Protocol` de por medio (mismo patrón plano que `08_cartera`/`30_parque`/
+`04_usuarios`, solo que aquí además separado de la raíz del repo):
+
 ```
-src/etl_chile/
-├── domain/            # Modelos y excepciones puras, sin dependencias externas
-├── application/        # Casos de uso (pipelines) + puertos (interfaces)
-│   ├── ports/           # Protocols: DatabaseGateway, SpreadsheetReader, FlatFileReader, CsvDownloader
-│   └── use_cases/       # SenalizacionesPipeline, VentasPipeline, SQL y mapeos de columnas
-├── infrastructure/     # Implementaciones concretas de los puertos
-│   ├── db/               # SQLAlchemy + pyodbc (SQL Server)
-│   ├── files/             # pandas/openpyxl (Excel, CSV)
-│   └── external/          # Descarga CSV desde Google Sheets
-└── presentation/        # CLI + composition root (inyección de dependencias)
-```
-
-Regla de dependencia: `presentation` e `infrastructure` dependen de
-`application`; `application` depende de `domain`; `domain` no depende de nada.
-Los pipelines (`application/use_cases`) sólo conocen los `Protocol` definidos
-en `application/ports`, nunca las clases concretas de `infrastructure`.
-
-### Decisión de diseño: `TBL_FUNNEL_SENHALIZACIONES_DNI`
-
-Ambos paquetes `.dtsx` originales truncan y recargan la tabla
-`TBL_FUNNEL_SENHALIZACIONES_DNI` con el mismo Data Flow (misma hoja Excel,
-mismas columnas). Aquí se extrajo una sola vez como caso de uso reutilizable:
-[`dni_senalizaciones_sync.py`](src/etl_chile/application/use_cases/dni_senalizaciones_sync.py).
-
-## Requisitos
-
-- Python 3.11+
-- [ODBC Driver 18 for SQL Server](https://learn.microsoft.com/sql/connect/odbc/download-odbc-driver-for-sql-server) instalado en el equipo
-- Acceso de red al servidor SQL Server `172.17.0.162` y a los archivos Excel/CSV de red (rutas `D:\IRISCENE ENGINEERING CORPORATION SLU\...`)
-
-## Instalación (VS Code)
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements-dev.txt
-pip install -e .
-copy .env.example .env
-```
-
-Edite `.env` con la contraseña real de `mparedes` y, si aplica, ajuste las
-rutas de red y la URL de exportación CSV de Google Sheets (ver
-`.env.example`).
-
-Abra la carpeta en VS Code — `.vscode/settings.json` ya deja los imports de
-`src/` resueltos para el analizador e IntelliSense, y `.vscode/launch.json`
-trae 3 configuraciones de depuración listas (Señalizaciones, Ventas, Todos).
-
-## Ejecución
-
-El orden respeta al del proyecto SSIS original: primero
-`CROSS 0101 SSIS_CL_Senalizaciones.dtsx`, después `CROSS 0102 SSIS_CL_Ventas.dtsx`.
-
-```bash
-python main.py senalizaciones
-python main.py ventas
-python main.py all
+02_ventas/
+├── README.md, .gitignore, .env.example, requirements*.txt, pyproject.toml
+├── main.py                          CLI + composition root
+├── copiar_funnel_ventas.py          Paso 0a (manual): copia 'FUNNEL VENTAS V2.xlsx'
+│                                    del sitio BPO a '07 CROSS'
+├── exportar_senhalizaciones_csv.py Paso 0b (manual o programado antes de
+│                                    correr Señalizaciones): descarga el
+│                                    formulario de Google Sheets y sube
+│                                    'Señalizaciones.csv' a '07 CROSS'
+├── tests/unit/                       fakes + tests por capa
+└── src/ventas/                        todo el codigo de la aplicacion
+    ├── sharepoint/
+    │   ├── auth.py     get_graph_token(): OAuth2 client-credentials contra Microsoft Graph
+    │   ├── client.py    SharePointClient: resolve_site/resolve_drive/resolve_folder/download_file
+    │   │                + upload_file (sube bytes a una carpeta, simple o en chunks)
+    │   └── reader.py     SharePointCsvReader (Señalizaciones.csv) y
+    │                     SharePointExcelReader (Base Carta Meta.xlsx / FUNNEL VENTAS V2.xlsx, por hoja)
+    │
+    ├── extraccion/extractor.py       Un extraer_xxx por Origen (CSV/Excel/tabla SQL)
+    ├── validacion/validator.py       Columnas esperadas + anchos (FailComponent/IgnoreFailure)
+    ├── transformacion/transformer.py 'Conversión de datos' emulada + Execute SQL Tasks
+    ├── carga/loader.py                TRUNCATE/DELETE + Destino OLE DB (bulk insert)
+    │
+    ├── pipeline.py    VentasPipeline: ejecutar_senalizaciones()/ejecutar_ventas()/ejecutar_todo()
+    ├── models.py      ColumnaSpec, ResultadoSubPipeline, ResultadoPipeline
+    ├── exceptions.py  VentasError y subclases
+    ├── mappings.py    Archivos/hojas SharePoint, tablas, columnas, anchos, correcciones literales
+    ├── sql.py         SQL migrado literalmente de cada Execute SQL Task
+    ├── db.py          DatabaseGateway (pyodbc) + fábrica de conexión (CL_USUARIOS)
+    ├── config.py      '.env' -> Settings (sin credenciales embebidas; incluye
+    │                  cargar_configuracion_origen() para el tenant de 'BPO', ver "Paso 0")
+    └── logging_setup.py Logging (archivo + consola)
 ```
 
-`ventas`/`all` usan la fecha de corte declarada en `VAR_FECHA` (`.env`);
-`--fecha YYYY-MM-DD` es opcional y, si se pasa, la sobreescribe puntualmente
-para esa ejecución:
+`pipeline.py` es el único módulo que conoce las 4 capas a la vez; `main.py`
+es el único que además conoce `db.py`/`sharepoint/`. Los 3 scripts de la
+raíz agregan `src/ventas/` al `sys.path` al arrancar (`sys.path.insert(0,
+str(BASE_DIR / "src" / "ventas"))`), así que dentro de `src/ventas/` los
+módulos se importan igual que si estuvieran en la raíz (`import mappings`,
+`from db import DatabaseGateway`, etc. — sin cambios respecto al layout
+plano). Los tests usan la misma configuración vía `pyproject.toml`
+(`[tool.pytest.ini_options] pythonpath = ["src/ventas"]`).
 
-```bash
-python main.py ventas --fecha 2026-08-01
-```
+## Alcance de orígenes
 
-### Parámetros/Variables del proyecto SSIS original
+Ambos `.dtsx` originales leen 4 archivos Excel/CSV distintos, todos
+publicados ahora en la **misma carpeta de SharePoint** (`sites/
+ReportingFractalia`, drive `Data Reporting`, `REPOSITORIOS DE CRUDOS/CHILE/
+BPOCHIPE/07 CROSS`):
 
-Se conservó la declaración de Parameters/Variables de
-`CROSS 0102 SSIS_CL_Ventas.dtsx` tal como está en el `.dtsx` (ver
-`PackageParameters` en [`config/settings.py`](src/etl_chile/config/settings.py)),
-declarada en `.env`:
-
-| Variable `.env` | Origen SSIS | Uso |
+| Archivo | Hoja(s) usada(s) | Quién lo usa |
 |---|---|---|
-| `PARAM_PERIODO` | Project Parameter `Periodo` (DT_I4) | No se usa en ningún SQL/expresión del `.dtsx` original — vestigial, se conserva por fidelidad. |
-| `VAR_FECHA` | Package Variable `User::Fecha` (DT_DATE) | Fecha de corte real, usada por el pipeline de Ventas. En el `.dtsx` original la inyectaba el scheduler que lo invocaba (`dtexec /Set \Package.Variables[User::Fecha].Value=...`); acá se declara en `.env` y puede sobreescribirse con `--fecha`. |
-| `VAR_FEC` | Package Variable `User::Fec` (DT_I4) | No se usa en ninguna parte del `.dtsx` original — vestigial, se conserva por fidelidad. |
+| `FUNNEL VENTAS V2.xlsx` | `baseV2`, `Esp`, `Sup` | Ventas |
+| `Base Carta Meta.xlsx` | `DNI Senalizaciones`, `Comisiones mes`, `Hoja1` | Señalizaciones (`DNI Senalizaciones`) y Ventas (las 3) |
+| `Señalizaciones.csv` | (Flat File) | Señalizaciones |
 
-## Tests
+`Señalizaciones.csv` lo genera `exportar_senhalizaciones_csv.py` (dentro de
+este proyecto), que reemplaza al Execute Process Task original
+(`Descargar googledrive señalizaciones`, que llamaba a
+`Ch_Senhalizaciones.py`, ver `Basurero/02_Cross/`): descarga las respuestas
+del formulario publicadas en Google Sheets y las sube directo a `07 CROSS`
+vía Microsoft Graph, en vez de escribir a la ruta de red local del script
+original. El delimitador de salida es `;` — pendiente de correr este script
+una vez para regenerar el archivo real con ese delimitador (ver
+`mappings.CSV_DELIMITER`, que debe mantenerse en `,` hasta que eso pase).
 
-```bash
+`Auditorias Cross Selling - Pusher.xlsx` (usado por
+`TBL_VENTAS_CROSSELLING_PUSHER_ABORDABLE` en el `.dtsx` original) **no se
+migró**: el usuario confirmó que ese sub-proceso está obsoleto, y de hecho
+el `Contenedor de secuencias` completo ya venía con `DTS:Disabled="True"`
+en el paquete original — no corría en producción.
+
+### Paso 0a: copiar `FUNNEL VENTAS V2.xlsx` a `07 CROSS`
+
+`copiar_funnel_ventas.py` copia el archivo desde el sitio `BPO`
+(`Planificación y Control/Insumos/Chile/Ventas_Chile/FUNNEL VENTAS V2.xlsx`
+— ruta relativa a la raíz del drive, **sin** el prefijo `Documentos
+compartidos/`) hacia `07 CROSS`. `BPO` y `ReportingFractalia` son
+**tenants de Microsoft Entra distintos**, cada uno con su propio App
+Registration/credenciales (`TENANT_ID`/... para `ReportingFractalia`,
+`SOURCE_TENANT_ID`/... para `BPO`, ver `.env.example`) — por eso no se usa
+el endpoint de copia asíncrona nativo de Graph (que solo copia dentro del
+mismo tenant/token): se descarga con el token de `BPO`
+(`SharePointClient.download_file`) y se sube con el token de
+`ReportingFractalia` (`SharePointClient.upload_file`). Se corre a mano
+cuando el usuario actualiza el Excel de origen; no lo invoca `main.py`.
+
+### Paso 0b: exportar `Señalizaciones.csv` a `07 CROSS`
+
+`exportar_senhalizaciones_csv.py` descarga el CSV publicado de Google
+Sheets/Forms (mismo link que usaba `Ch_Senhalizaciones.py`) y lo sube a
+`07 CROSS` con el token de `ReportingFractalia` (`upload_file`), con `;`
+como delimitador de salida. Igual que el paso 0a, se corre a mano/programado
+antes de `main.py --paquete senalizaciones`; no lo invoca `main.py`.
+
+## Destino SQL Server
+
+Ambos `.dtsx` originales declaran conexiones OLE DB a `172.17.0.162`.
+**Solo `CL_USUARIOS` se usa realmente**: `CROSS 0102 SSIS_CL_Ventas`
+declara también una conexión a `CL_DATA` (`162.CL_DATA`), pero ningún
+Execute SQL Task ni Data Flow del paquete la referencia — es una conexión
+muerta en el `.dtsx` original, y no se migró ninguna configuración para
+`CL_DATA`.
+
+## Despliegue
+
+El pipeline se ejecuta y se programa en el **mismo servidor Chile
+(`172.17.0.162`)** que hoy corre los paquetes SSIS y hospeda `CL_USUARIOS`
+— no en la máquina de desarrollo. `DB_SERVER` en `.env` puede apuntar a
+`localhost`/`127.0.0.1` o a `172.17.0.162` (la conexión es local a esa
+máquina); el acceso saliente a Microsoft Graph
+(`login.microsoftonline.com`, `graph.microsoft.com`) debe estar disponible
+desde ahí. La programación periódica (equivalente al Agent Job/Scheduler
+original) se hace con Windows Task Scheduler ejecutando `python main.py`.
+
+## Proceso original (Control Flow)
+
+```
+CROSS 0101 SSIS_CL_Senalizaciones
+├─ Descargar googledrive señalizaciones (fuera de alcance, ver arriba)
+├─ TRUNCATE SEÑALIZACIONES -> Data Flow 'TBL_FUNNEL_SENHALIZACIONES' (CSV)
+├─ SP_FUNNEL_SENHALIZACIONES
+├─ UPDATE (corrige 19 DNIs con cero inicial perdido, pares literales)
+└─ Contenedor de secuencias
+   ├─ TRUNCATE -> Data Flow 'TBL_FUNNEL_SENHALIZACIONES_DNI' (Excel)
+   └─ UPDATE (corrige 'TU DNI' en TBL_FUNNEL_SENHALIZACIONES desde la tabla DNI)
+
+CROSS 0102 SSIS_CL_Ventas
+├─ Contenedor de secuencias 2 (sin dependencias entre sus 4 hijos; el 4to
+│  ya viene deshabilitado en el .dtsx original)
+│  ├─ COMISIONES: TRUNCATE -> Data Flow 'TBL_VENTAS_RANGO_COMISIONES' (Excel)
+│  ├─ Contenedor de secuencias 1: TRUNCATE -> Data Flow
+│  │  'TBL_FUNNEL_SENHALIZACIONES_DNI' (recarga independiente de la de Señalizaciones)
+│  ├─ METAS: TRUNCATE -> Data Flow 'METAS_COMISIONES' (Excel)
+│  └─ TBL_VENTAS_CROSSELLING_PUSHER_ABORDABLE (DESHABILITADO, no migrado)
+├─ Contenedor de secuencias 1 (BaseV2/Esp/Sup en paralelo; UPDATE espera a los 3)
+│  ├─ BaseV2: TRUNCATE -> Data Flow 'basev2_temp' (Excel) -> Tarea Ejecutar SQL
+│  │  (limpieza, 5 sentencias) -> update DNI
+│  ├─ Contenedor de secuencias (Esp): TRUNCATE -> Data Flow 'Esp_temp'
+│  ├─ Sup: TRUNCATE -> Data Flow 'Sup_temp'
+│  └─ UPDATE (completa DNI SUPERVISOR/DNI ESPECIALISTA/COD_DNI, 3 sentencias)
+└─ LOCAL
+   ├─ TRUNCATE TBL_FUNNEL_VENTAS_Temp -> Data Flow 'Temp' (desde basev2_temp)
+   ├─ DELETE VENTAS2 >= Fecha
+   ├─ DELETE TEMP < Fecha
+   └─ INSERT VENTAS2 (desde Temp)
+```
+
+`Contenedor de secuencias 1` (BaseV2/Esp/Sup) corre en paralelo en el
+`.dtsx` original; aquí se ejecuta en secuencia (BaseV2, Esp, Sup) — el
+resultado no cambia porque son independientes entre sí, solo cambia el
+tiempo total de corrida.
+
+## Notas de fidelidad
+
+- **`GO` como separador de lotes**: 3 Execute SQL Tasks del `.dtsx`
+  original (`UPDATE` de DNI con cero perdido en Señalizaciones,
+  `Tarea Ejecutar SQL` de limpieza y `UPDATE` de DNI supervisor/especialista
+  en Ventas) traían su texto SQL con varias sentencias separadas por `GO`.
+  `GO` **no es una instrucción T-SQL válida** para el proveedor OLE DB que
+  usa el Execute SQL Task — es un separador de lotes de SSMS/sqlcmd. Aquí
+  cada sentencia se ejecuta por separado (`mappings.CORRECCIONES_DNI_CEROS`
+  + `sql.SQL_CORREGIR_DNI_CERO_PERDIDO` parametrizado; tuplas
+  `sql.SQL_LIMPIEZA_VENTAS_BASEV2` / `sql.SQL_COMPLETAR_DNI_SUP_ESP_COD`),
+  preservando la lógica exacta de cada UPDATE/DELETE sin enviar la palabra
+  `GO` a SQL Server.
+- **Typo real en la tabla `TBL_FUNNEL_SENHALIZACIONES`**: la columna
+  destino de `Número del cual llama` se llama literalmente
+  `MÚMERO DEL CUAL LLAMA` (con "MÚ" en vez de "NÚ") en la tabla SQL Server
+  — se preserva tal cual, no se corrige.
+- **`TBL_FUNNEL_SENHALIZACIONES_DNI` se recarga dos veces**: tanto
+  Señalizaciones como Ventas truncan y vuelven a cargar esta misma tabla
+  desde la misma hoja Excel, de forma independiente. Se preserva esa
+  redundancia (ambas corren, en el orden 0101→0102) en vez de deduplicarla.
+- **`METAS_COMISIONES` — cast implícito no documentado**: en el `.dtsx`
+  original, `Fibra`/`Voz`/`Total`/`PERIODO` y `Señalizacion Total` (esta
+  última además renombrada a `SEÑALIZACIONES TOTAL`) van directo del Origen
+  Excel al Destino OLE DB **sin pasar por el componente `Conversión de
+  datos`**, pese a que la tabla destino los declara `int`. No hay ninguna
+  disposición de error configurada para ese cast implícito — un valor no
+  numérico haría fallar el INSERT completo. Aquí se castea explícitamente
+  antes de insertar, levantando `ValidacionError` si no es numérico
+  (`transformer.convertir_tipos_metas`), en vez de dejar que pyodbc falle
+  con un error genérico.
+- **Disposición de error/truncamiento — `FailComponent` ya NO aborta la
+  carga**: el `.dtsx` original abortaba el Data Flow completo si una
+  columna de texto excedía su ancho declarado (`ColumnaSpec.estricto=True`,
+  ver `models.py`/`mappings.py`). Tras la primera corrida real (2026-09,
+  ver más abajo) se confirmó que el formulario de origen trae respuestas
+  mal llenadas con cierta frecuencia, y bloquear todo el funnel por unas
+  pocas filas no es aceptable — a pedido explícito del usuario,
+  `transformer.vaciar_valores_que_excedan_ancho()` reemplazó ese aborto: el
+  valor que excede el ancho queda `NULL` en esa columna y el resto de la
+  fila se carga igual (para TODAS las columnas de texto, no solo las que
+  ya eran `IgnoreFailure`). `validacion.validar_longitudes()` sigue
+  existiendo y probada (documenta el comportamiento `FailComponent`
+  original), pero ya no se llama desde `pipeline.py`. Columnas
+  numéricas/fecha siguen igual: `estricto=True` aborta si no parsean,
+  `estricto=False` queda `NULL`.
+- **`RUT DE LA EMPRESA` / `NOMBRE EMPRESA` invertidos**: visto en
+  producción (2026-09) — varias respuestas del formulario tienen el RUT y
+  el nombre de la empresa cargados en el campo contrario.
+  `transformer.corregir_rut_nombre_invertidos()` detecta el patrón (si
+  `NOMBRE EMPRESA` tiene forma de RUT chileno y `RUT DE LA EMPRESA` no) y
+  los intercambia antes de cargar — no es lógica del `.dtsx` original, es
+  limpieza agregada sobre datos reales. Lo que no se puede recuperar así
+  (correo pegado en el campo RUT, texto mezclado de otro caso) cae en la
+  regla general de arriba: queda `NULL`, no bloquea la carga.
+- **`162.CL_DATA`**: declarado en el `.dtsx` original pero sin ningún
+  componente que lo use — no se migró configuración para esa base.
+- La corrección exacta de valores (`CORRECCIONES_DNI_CEROS`) incluye un par
+  duplicado (`004981615`/`4981615` dos veces) tal como aparecía en el
+  `.dtsx` original — es un no-op redundante, se preserva sin limpiar.
+
+## Pruebas
+
+`tests/unit/` usa fakes (`FakeDatabaseGateway`, `FakeSharePointCsvReader`,
+`FakeSharePointExcelReader`) para probar cada capa sin una base de datos ni
+una conexión Graph real: extracción (lee el archivo/hoja correcto),
+validación (columnas/anchos), transformación (casts, renombres, SQL
+literal ejecutado en el orden correcto) y el pipeline completo (orden real
+de ejecución, fail-fast, `ejecutar_todo` corre 0101 antes que 0102).
+
+```
+pip install -r requirements-dev.txt
 pytest
 ```
 
-Los tests usan *fakes* de los puertos (`tests/unit/fakes.py`), por lo que no
-requieren base de datos ni archivos Excel reales.
+La corrida real contra `CL_USUARIOS`/SharePoint (`python main.py`) no se
+pudo validar desde este entorno de desarrollo (sin acceso de red al
+servidor ni credenciales Graph todavía) — queda pendiente para cuando el
+usuario la ejecute con su red/credenciales. Es probable que surjan ajustes
+de ancho de columna u otros detalles de datos reales no visibles en los
+`.dtsx` (mismo patrón que en `30_parque`/`04_usuarios`); ante un error de
+`String data, right truncation` sin evidencia documentada de truncamiento
+intencional, preferir ampliar la columna destino (`ALTER TABLE`) antes que
+truncar datos.
 
-## Notas de fidelidad con los paquetes SSIS originales
+## Uso
 
-- Los separadores `GO` de los Execute SQL Task multi-batch se eliminaron;
-  cada sentencia se ejecuta por separado (`GO` no es SQL válido para
-  ODBC/OLE DB, sólo lo entienden SSMS/sqlcmd).
-- El stored procedure `SP_FUNNEL_SENHALIZACIONES` se invoca vía `EXEC`, tal
-  como en el paquete original — su lógica interna no se reimplementó en
-  Python porque no forma parte del `.dtsx`.
-- El parámetro de proyecto `Periodo` y la variable `User::Fec` del paquete de
-  Ventas estaban definidos pero sin uso en el `.dtsx` original (vestigiales);
-  no se migraron.
-- La columna de destino `MÚMERO DEL CUAL LLAMA` está mal escrita en la tabla
-  SQL original (falta la "N" de "NÚMERO"); se conserva así para no romper
-  compatibilidad con la tabla existente.
-- La columna `TOTAL INGRESADO` de `TBL_FUNNEL_SENHALIZACIONES` nunca se
-  pobló en el paquete original (el Flat File Source no seleccionaba esa
-  columna del CSV); se mantiene sin mapear.
-- Las validaciones estrictas `FailComponent` de los componentes "Data
-  Conversion" de SSIS no se replican: los casts de tipo son permisivos
-  (`errors="coerce"` → valor nulo en vez de abortar la carga).
+```
+python main.py --fecha 2026-08-01                 # corre los 2 paquetes en orden (0101 -> 0102)
+python main.py --fecha 2026-08-01 --paquete ventas # corre solo Ventas
+python main.py --paquete senalizaciones            # no usa --fecha
+python main.py                                     # usa VAR_FECHA de .env
+python copiar_funnel_ventas.py                      # paso 0, manual
+```

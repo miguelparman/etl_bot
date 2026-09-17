@@ -7,6 +7,36 @@ Cada seccion cita el .dtsx y el Data Flow de origen.
 from __future__ import annotations
 
 # ===========================================================================
+# Origenes SharePoint (reemplazan al Connection Manager OLE DB 'Externos_Frac')
+# ===========================================================================
+#
+# El nombre de archivo CSV coincide, a proposito, con el nombre de la tabla
+# de origen SQL Server que reemplaza -- identico al criterio ya usado en
+# 30_parque/mappings.py para 'pqe_fijtot2023.csv'/'pqe_movtot2023.csv' (que
+# vienen del MISMO folder de SharePoint, ver sharepoint/reader.py). Las
+# consultas SQL originales (ahora reemplazadas por extraccion+pandas, ver
+# extraccion/extractor.py) quedan documentadas en sql.py como referencia de
+# la logica de negocio migrada.
+
+# Delimitador de los CSV publicados en SharePoint. Se asume ';' por
+# consistencia con 30_parque (confirmado alli contra el archivo real de
+# 'pqe_fijtot2023.csv'/'pqe_movtot2023.csv', que se leen del mismo folder) --
+# a confirmar contra los archivos reales del resto de las tablas.
+CSV_DELIMITER = ";"
+
+PARQUE_FIJO_ARCHIVO = "pqe_fijtot2023.csv"
+PARQUE_MOVIL_ARCHIVO = "pqe_movtot2023.csv"
+RUT_MARCA_CARTERA_ARCHIVO = "RUT_marca_cartera.csv"
+RETENCIONES_BAJAS_FRAUDE_ARCHIVO = "BAJAS_FRAUDE.csv"
+RETENCIONES_BAJAS_POR_ALTA_ARCHIVO = "BAJAS_POR_ALTA_FO.csv"
+RETENCIONES_BD_RETEN_ARCHIVO = "BD_RETEN_V2.csv"
+INTENCIONES_BAJAS_FIJO_ARCHIVO = "BAJAS_FIJO.csv"
+INTENCIONES_BAJAS_MOVIL_ARCHIVO = "BAJAS_MOVIL.csv"
+INTENCIONES_V2_ARCHIVO = "INTENCIONES_V2.csv"
+ITEM_AMDOCS_ARCHIVO = "INTEN_AMDOCS.csv"
+SAIP_ARCHIVO = "base_saip.csv"
+
+# ===========================================================================
 # USUARIOS_0101 Parque.dtsx -- Data Flow 'PARQUE'
 # ===========================================================================
 
@@ -70,10 +100,6 @@ BD_RETEN_TRUNCATION_LENGTHS: dict[str, int] = {
 INTENCIONES_BAJAS_FIJO_TABLE = "TBL_CH_BAJAS_FIJO"
 INTENCIONES_BAJAS_MOVIL_TABLE = "TBL_CH_BAJAS_MOVIL"
 
-# Destino OLE DB de 'CARGA DE USUARIOS RETENCIONES SERVIDOR CHILE'
-# (Externos_Frac, no CL_USUARIOS).
-INTENCIONES_USUARIOS_RETENCIONES_TABLE = "TBL_FRACTALIA_USER_RETENCIONES"
-
 # Destino OLE DB 'INTENCIONES LOCAL' del Data Flow 'INTENCIONES'
 # (disposicion de error IgnoreFailure -- ver db.bulk_insert_ignorando_errores).
 INTENCIONES_TABLE = "INTENCIONES"
@@ -130,6 +156,12 @@ ITEM_AMDOCS_DATETIME_COLUMNS: tuple[str, ...] = ("case_optim", "case_cltim", "Va
 # IgnoreFailure: se trunca en silencio, nunca aborta la fila (a diferencia de
 # BD_RETEN/INTENCIONES_V2, que abortan por defecto -- ver README, "Notas de
 # fidelidad", sobre por que este Data Flow es distinto).
+#
+# Confirmados contra el esquema REAL de [CL_USUARIOS].[dbo].[INTEN_AMDOCS]
+# (INFORMATION_SCHEMA.COLUMNS, 2026-09-16) -- varios de estos valores no
+# coincidian con el ancho real de la columna destino (algunos mas angostos,
+# lo que abortaba el insert con 'String data, right truncation'; otros mas
+# anchos, lo que truncaba datos validos de mas sin necesidad).
 ITEM_AMDOCS_TRUNCATION_LENGTHS: dict[str, int] = {
     "type1": 40,
     "type2": 30,
@@ -138,25 +170,25 @@ ITEM_AMDOCS_TRUNCATION_LENGTHS: dict[str, int] = {
     "case_resol": 50,
     "canal_ing": 30,
     "subcan_ing": 35,
-    "segmento": 50,
-    "subtype": 50,
-    "line_buss": 50,
-    "motivo": 50,
-    "servicio": 50,
-    "prod_type": 50,
-    "ser_stat_r": 50,
-    "tpo_serv": 50,
+    "segmento": 10,
+    "subtype": 20,
+    "line_buss": 10,
+    "motivo": 35,
+    "servicio": 10,
+    "prod_type": 15,
+    "ser_stat_r": 25,
+    "tpo_serv": 10,
     "tecno_stb": 5,
-    "tecno_baf": 5,
+    "tecno_baf": 10,
     "tecno_tv": 5,
-    "tpo_t_stb": 5,
-    "tpo_t_baf": 5,
-    "tpo_t_tv": 5,
-    "origen": 10,
+    "tpo_t_stb": 50,
+    "tpo_t_baf": 50,
+    "tpo_t_tv": 50,
+    "origen": 50,
     "canal_res": 50,
-    "subcan_res": 40,
-    "cargo_res": 20,
-    "canal_hres": 20,
+    "subcan_res": 50,
+    "cargo_res": 50,
+    "canal_hres": 50,
 }
 
 # ===========================================================================

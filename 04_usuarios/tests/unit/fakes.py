@@ -1,9 +1,11 @@
-"""Doble de prueba (fake) para DatabaseGateway (db.py).
+"""Dobles de prueba (fakes) para DatabaseGateway (db.py) y SharePointCsvReader
+(sharepoint/reader.py).
 
-Permite testear el pipeline sin una base de datos real, registrando las
-llamadas para poder aseverar el orden/contenido -- igual que en los demas
-proyectos migrados de este repositorio. No hereda de la clase concreta:
-Python no lo exige (duck typing) y evita acoplar el fake a la
+Permiten testear el pipeline sin una base de datos ni una conexion Graph/
+SharePoint reales, registrando las llamadas para poder aseverar el orden/
+contenido -- igual que en los demas proyectos migrados de este repositorio
+(ver 30_parque/tests/unit/fakes.py). No heredan de las clases concretas:
+Python no lo exige (duck typing) y evita acoplar los fakes a la
 implementacion real.
 """
 
@@ -50,3 +52,11 @@ class FakeDatabaseGateway:
 
     def read_table(self, table: str, schema: str = "dbo") -> pd.DataFrame:
         return self.tables[table]
+
+
+class FakeSharePointCsvReader:
+    def __init__(self, archivos: dict[str, pd.DataFrame]) -> None:
+        self._archivos = archivos
+
+    def leer_csv(self, nombre_archivo: str) -> pd.DataFrame:
+        return self._archivos[nombre_archivo]

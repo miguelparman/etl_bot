@@ -1,5 +1,2 @@
 -r requirements.txt
 pytest>=8.0
-pytest-mock>=3.12
-black>=24.0
-ruff>=0.4

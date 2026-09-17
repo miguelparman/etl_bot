@@ -3,22 +3,32 @@ clientes, retenciones, intenciones de baja, items Amdocs y base SAIP.
 
 Arquitectura (modular, dividida en las 4 capas del proceso original, una
 carpeta por capa):
-    extraccion/extractor.py       Extraccion: Origenes OLE DB -> DataFrame.
+    sharepoint/                   Adaptadores Microsoft Graph: auth.py
+                                   (token), client.py (resolver site/drive,
+                                   descargar archivo), reader.py (CSV ->
+                                   DataFrame). Reemplaza, como ORIGEN, al
+                                   Connection Manager OLE DB 'Externos_Frac'.
+    extraccion/extractor.py       Extraccion: CSV SharePoint -> DataFrame,
+                                   un extraer_xxx por Origen.
     validacion/validator.py       Validacion: controles de calidad de datos.
     transformacion/transformer.py Transformacion: 'Data Conversion' emulado
                                    + tareas SQL que corren en el mismo servidor.
-    carga/loader.py               Carga: deletes/truncados y Destinos OLE DB.
+    carga/loader.py               Carga: deletes/truncados y Destinos OLE DB
+                                   (todos en CL_USUARIOS).
     pipeline.py                   Orquestador: llama a las 4 capas anteriores,
                                    una funcion 'ejecutar_xxx' por paquete .dtsx.
     models.py, exceptions.py      Value objects (Periodo, ResultadoPipeline) y
                                    excepciones. Sin dependencias externas.
     mappings.py, sql.py           Constantes de negocio: columnas/tablas/anchos
-                                   de truncamiento, y las sentencias T-SQL
-                                   migradas literalmente de cada Execute SQL Task.
+                                   de truncamiento, nombres de archivo CSV, y
+                                   las sentencias T-SQL migradas literalmente
+                                   de cada Execute SQL Task / Origen OLE DB
+                                   (los SELECT que leian Externos_Frac quedan
+                                   solo como referencia, ya no se ejecutan).
     db.py                         Adaptador concreto: pyodbc (SQL Server).
     config.py, logging_setup.py   Configuracion via '.env' y logging.
-    main.py (este archivo)        Composition root: arma db.py y lo pasa a
-                                   UsuariosPipeline.
+    main.py (este archivo)        Composition root: arma db.py + el cliente
+                                   de SharePoint y los pasa a UsuariosPipeline.
 
 Configuracion:
     Los valores se leen del archivo '.env' (junto a este script; ver
@@ -26,7 +36,10 @@ Configuracion:
     conexion 'CL_USUARIOS' de los 5 .dtsx originales tenia password
     DPAPI-encriptado por usuario/maquina, imposible de reutilizar fuera de
     esa maquina; aqui se declara en '.env' (no versionado). La conexion
-    'Externos_Frac' usa autenticacion de Windows integrada (sin credencial).
+    'Externos_Frac' ya no se usa para nada: como ORIGEN fue reemplazada por
+    un App Registration de Microsoft Graph (Sites.Selected sobre el sitio
+    ReportingFractalia) que lee los CSV publicados en SharePoint, y su unico
+    destino (TBL_FRACTALIA_USER_RETENCIONES) se dio de baja por obsoleto.
 
 Uso:
     python main.py --periodo 202608                 # equivalente a editar a
@@ -48,11 +61,15 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR))  # permite 'import mappings', 'import sql', etc. al correr como script suelto
 
+import mappings
 from config import cargar_configuracion
 from db import DatabaseGateway, crear_conexion
 from exceptions import PipelineError, UsuariosError
 from logging_setup import NOMBRE_LOGGER, configurar_logging
 from pipeline import UsuariosPipeline
+from sharepoint.auth import get_graph_token
+from sharepoint.client import SharePointClient
+from sharepoint.reader import SharePointCsvReader
 
 logger = logging.getLogger(NOMBRE_LOGGER)
 
@@ -92,14 +109,25 @@ def main() -> int:
     logger.info("Iniciando USUARIOS (paquete=%s) para el periodo %s.", args.paquete, settings.periodo)
 
     conn_cl_usuarios = None
-    conn_externos_frac = None
     try:
+        token = get_graph_token(
+            settings.sharepoint.tenant_id,
+            settings.sharepoint.client_id,
+            settings.sharepoint.client_secret,
+            settings.sharepoint.timeout_ms,
+        )
+        client = SharePointClient(token, settings.sharepoint.timeout_ms)
+        site_id = client.resolve_site(settings.sharepoint.hostname, settings.sharepoint.site_path)
+        drive_id = client.resolve_drive(site_id, settings.sharepoint.drive_name)
+        sharepoint_reader = SharePointCsvReader(
+            client, drive_id, settings.sharepoint.folder_path, delimiter=mappings.CSV_DELIMITER
+        )
+
         conn_cl_usuarios = crear_conexion(settings.db_cl_usuarios)
-        conn_externos_frac = crear_conexion(settings.db_externos_frac)
 
         pipeline = UsuariosPipeline(
             db_cl_usuarios=DatabaseGateway(conn_cl_usuarios, settings.batch_size),
-            db_externos_frac=DatabaseGateway(conn_externos_frac, settings.batch_size),
+            sharepoint_reader=sharepoint_reader,
         )
 
         if args.paquete == "parque":
@@ -132,8 +160,6 @@ def main() -> int:
         return 1
 
     finally:
-        if conn_externos_frac is not None:
-            conn_externos_frac.close()
         if conn_cl_usuarios is not None:
             conn_cl_usuarios.close()
 
