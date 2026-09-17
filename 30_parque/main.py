@@ -9,7 +9,8 @@ I+II' del .dtsx original -- ver pipeline.py para el detalle completo):
     TRUNCATE -> Origen SharePoint/CSV -> filtro por periodo -> Destino _ACTUAL (CL_PLANTA)
       -> DELETE WHERE PERIODO=? -> INSERT ... SELECT _ACTUAL -> Destino _HISTORICO (CL_PLANTA)
 
-Arquitectura (modular, una carpeta por capa):
+Arquitectura ("src layout": codigo en src/parque/, modular, una carpeta
+por capa):
     sharepoint/                    Adaptadores: auth.py (token Graph),
                                    client.py (resolver site/drive, descargar
                                    archivo), reader.py (CSV -> DataFrame).
@@ -51,7 +52,7 @@ import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(BASE_DIR))  # permite 'import mappings', 'import sql', etc. al correr como script suelto
+sys.path.insert(0, str(BASE_DIR / "src" / "parque"))  # permite 'import mappings', 'import sql', etc. al correr como script suelto
 
 import mappings
 from config import cargar_configuracion

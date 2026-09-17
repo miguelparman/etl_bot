@@ -17,60 +17,67 @@ completo, con pruebas, antes de empezar el siguiente):
 
 ## Arquitectura
 
-Modular por componentes, dividida en 4 capas que replican 1:1 las 4 etapas
-del proceso original (extracción, validación, transformación, carga), cada
-una en su propia carpeta — sin capas domain/application/infrastructure ni
-interfaces `Protocol` de por medio:
+**"src layout"**: en la raíz del proyecto solo quedan `README.md`,
+`.gitignore`, `.env.example`, `requirements*.txt`, `pyproject.toml` y
+`main.py`. El código vive en `src/usuarios/`, modular por componentes,
+dividido en 4 capas que replican 1:1 las 4 etapas del proceso original
+(extracción, validación, transformación, carga), cada una en su propia
+carpeta — sin capas domain/application/infrastructure ni interfaces
+`Protocol` de por medio:
 
 ```
-sharepoint/
-├── auth.py              # Token Microsoft Graph (OAuth2 client credentials)
-├── client.py             # Resuelve site/drive y descarga archivos (Graph)
-└── reader.py             # CSV -> DataFrame (reemplaza, como ORIGEN, al
-                          # Connection Manager OLE DB 'Externos_Frac')
-
-extraccion/
-└── extractor.py        # un extraer_xxx(reader, periodo) por Origen: lee el
-                         # CSV de SharePoint y replica en pandas el filtro/
-                         # JOIN/dedup que antes hacia la consulta SQL contra
-                         # Externos_Frac (ver sql.py para la consulta
-                         # original, conservada como referencia); incluye la
-                         # emulación de los componentes 'Data Conversion'/
-                         # 'Conversión de datos'.
-
-validacion/
-└── validator.py        # ninguno de los 5 .dtsx tiene una tarea de calidad
-                         # de datos como la 'VALIDA' de 08_cartera; queda
-                         # como punto de extensión
-
-transformacion/
-└── transformer.py       # tareas Execute SQL / Data Flow que corren
-                          # enteramente dentro de CL_USUARIOS (mismo origen y
-                          # destino): se ejecutan como script T-SQL literal
-
-carga/
-└── loader.py            # deletes/truncados y Destinos OLE DB (todos en
-                          # CL_USUARIOS)
-
-pipeline.py              # UsuariosPipeline: un 'ejecutar_xxx' por paquete
-                          # .dtsx + 'ejecutar_todo' (orden 0101→0201→0300→0301→0302)
-
-models.py                # Periodo (YYYYMM), ResultadoSubPipeline/ResultadoPipeline
-exceptions.py            # ExtraccionError, ValidacionError, CargaError, PipelineError
-mappings.py               # tablas/columnas/anchos de truncamiento, nombres de
-                          # archivo CSV en SharePoint (constantes de negocio)
-sql.py                    # sentencias T-SQL migradas literalmente, por paquete
-                          # (los SELECT que leian Externos_Frac ya no se
-                          # ejecutan, quedan solo como referencia -- ver
-                          # extraccion/extractor.py)
-
-db.py                     # DatabaseGateway (pyodbc) + fábrica de conexiones
-                          # (SQL Server auth o Windows integrada según el Connection Manager)
-config.py                 # Carga de '.env' -> Settings (sin credenciales embebidas)
-logging_setup.py          # Logging (archivo + consola)
-
-main.py                   # CLI + composition root (--periodo, --paquete)
+04_usuarios/
+├── README.md, .gitignore, .env.example, requirements*.txt, pyproject.toml
+├── main.py                       CLI + composition root (--periodo, --paquete)
+├── tests/unit/                    fakes + tests por capa
+└── src/usuarios/                   todo el codigo de la aplicacion
+    ├── sharepoint/
+    │   ├── auth.py                Token Microsoft Graph (OAuth2 client credentials)
+    │   ├── client.py               Resuelve site/drive y descarga archivos (Graph)
+    │   └── reader.py               CSV -> DataFrame (reemplaza, como ORIGEN, al
+    │                              Connection Manager OLE DB 'Externos_Frac')
+    │
+    ├── extraccion/extractor.py     un extraer_xxx(reader, periodo) por Origen: lee el
+    │                              CSV de SharePoint y replica en pandas el filtro/
+    │                              JOIN/dedup que antes hacia la consulta SQL contra
+    │                              Externos_Frac (ver sql.py para la consulta
+    │                              original, conservada como referencia); incluye la
+    │                              emulación de los componentes 'Data Conversion'/
+    │                              'Conversión de datos'.
+    │
+    ├── validacion/validator.py     ninguno de los 5 .dtsx tiene una tarea de calidad
+    │                              de datos como la 'VALIDA' de 08_cartera; queda
+    │                              como punto de extensión
+    │
+    ├── transformacion/transformer.py tareas Execute SQL / Data Flow que corren
+    │                              enteramente dentro de CL_USUARIOS (mismo origen y
+    │                              destino): se ejecutan como script T-SQL literal
+    │
+    ├── carga/loader.py             deletes/truncados y Destinos OLE DB (todos en
+    │                              CL_USUARIOS)
+    │
+    ├── pipeline.py                  UsuariosPipeline: un 'ejecutar_xxx' por paquete
+    │                              .dtsx + 'ejecutar_todo' (orden 0101→0201→0300→0301→0302)
+    ├── models.py                    Periodo (YYYYMM), ResultadoSubPipeline/ResultadoPipeline
+    ├── exceptions.py                ExtraccionError, ValidacionError, CargaError, PipelineError
+    ├── mappings.py                  tablas/columnas/anchos de truncamiento, nombres de
+    │                              archivo CSV en SharePoint (constantes de negocio)
+    ├── sql.py                       sentencias T-SQL migradas literalmente, por paquete
+    │                              (los SELECT que leian Externos_Frac ya no se
+    │                              ejecutan, quedan solo como referencia -- ver
+    │                              extraccion/extractor.py)
+    ├── db.py                        DatabaseGateway (pyodbc) + fábrica de conexiones
+    │                              (SQL Server auth o Windows integrada según el Connection Manager)
+    └── config.py, logging_setup.py Carga de '.env' -> Settings + logging (archivo + consola)
 ```
+
+`main.py` agrega `src/usuarios/` al `sys.path` al arrancar
+(`sys.path.insert(0, str(BASE_DIR / "src" / "usuarios"))`), así que dentro
+de `src/usuarios/` los módulos se importan igual que si estuvieran en la
+raíz (`import mappings`, `from db import DatabaseGateway`, etc. — sin
+cambios respecto al layout plano). Los tests usan la misma configuración
+vía `pyproject.toml` (`[tool.pytest.ini_options] pythonpath =
+["src/usuarios"]`).
 
 `extractor.py`, `validator.py`, `transformer.py` y `loader.py` reciben un
 `DatabaseGateway` (o un duck-type equivalente, como `tests/unit/fakes.py`)

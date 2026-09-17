@@ -8,40 +8,36 @@ contra el histórico acumulado.
 
 ## Arquitectura
 
-Modular por componentes, dividida en 4 capas que replican 1:1 las 4 etapas
-del proceso original (extracción, validación, transformación, carga), cada
-una en su propia carpeta — sin capas domain/application/infrastructure ni
-interfaces `Protocol` de por medio:
+**"src layout"**: en la raíz del proyecto solo quedan `README.md`,
+`.gitignore`, `.env.example`, `requirements*.txt`, `pyproject.toml` y
+`main.py`. El código vive en `src/cartera/`, modular por componentes,
+dividido en 4 capas que replican 1:1 las 4 etapas del proceso original
+(extracción, validación, transformación, carga), cada una en su propia
+carpeta — sin capas domain/application/infrastructure ni interfaces
+`Protocol` de por medio:
 
 ```
-extraccion/
-└── extractor.py       # extraer(): Origen Excel + Conversión de datos + Columna derivada
-
-validacion/
-└── validator.py       # validar_cartera_temporal(): tarea 'VALIDA' (4 controles de calidad)
-
-transformacion/
-└── transformer.py     # CARGA DNI, ACTUALIZA STATUS, LIMITA CLIENTES, LIMPIA TEMPORAL
-
-carga/
-└── loader.py          # truncados, inserciones y copia entre bases de datos
-
-pipeline.py           # CarteraPipeline: orquesta las 4 capas anteriores en el
-                       # orden del Control Flow original
-
-models.py             # Value objects: Periodo, ResultadoPipeline
-exceptions.py          # Excepciones del proceso (ExtraccionError, ValidacionError, ...)
-mappings.py            # Columnas/tablas/anchos de truncamiento (constantes de negocio)
-sql.py                 # Sentencias T-SQL migradas literalmente de cada Execute SQL Task
-
-db.py                 # DatabaseGateway (pyodbc) + fábrica de conexiones
-                       # (una por Connection Manager OLE DB del .dtsx original)
-spreadsheet.py         # SpreadsheetReader (pandas/openpyxl)
-config.py              # Carga de '.env' -> Settings (sin credenciales embebidas)
-logging_setup.py       # Logging (archivo + consola)
-
-main.py                # CLI + composition root: arma db.py/spreadsheet.py e
-                       # inyecta en CarteraPipeline
+08_cartera/
+├── README.md, .gitignore, .env.example, requirements*.txt, pyproject.toml
+├── main.py                     CLI + composition root: arma db.py/spreadsheet.py
+│                              e inyecta en CarteraPipeline
+├── tests/unit/                  fakes + tests por capa
+└── src/cartera/                   todo el codigo de la aplicacion
+    ├── extraccion/extractor.py     extraer(): Origen Excel + Conversión de datos + Columna derivada
+    ├── validacion/validator.py     validar_cartera_temporal(): tarea 'VALIDA' (4 controles de calidad)
+    ├── transformacion/transformer.py CARGA DNI, ACTUALIZA STATUS, LIMITA CLIENTES, LIMPIA TEMPORAL
+    ├── carga/loader.py              truncados, inserciones y copia entre bases de datos
+    │
+    ├── pipeline.py                  CarteraPipeline: orquesta las 4 capas anteriores en el
+    │                              orden del Control Flow original
+    ├── models.py                    Value objects: Periodo, ResultadoPipeline
+    ├── exceptions.py                Excepciones del proceso (ExtraccionError, ValidacionError, ...)
+    ├── mappings.py                  Columnas/tablas/anchos de truncamiento (constantes de negocio)
+    ├── sql.py                       Sentencias T-SQL migradas literalmente de cada Execute SQL Task
+    ├── db.py                        DatabaseGateway (pyodbc) + fábrica de conexiones
+    │                              (una por Connection Manager OLE DB del .dtsx original)
+    ├── spreadsheet.py               SpreadsheetReader (pandas/openpyxl)
+    └── config.py, logging_setup.py Carga de '.env' -> Settings + logging (archivo + consola)
 ```
 
 `extractor.py`, `validator.py`, `transformer.py` y `loader.py` reciben un
@@ -50,7 +46,12 @@ main.py                # CLI + composition root: arma db.py/spreadsheet.py e
 `spreadsheet.py` para nada más que el type hint, así que se pueden probar sin
 base de datos ni Excel reales. `pipeline.py` es el único módulo que conoce
 las 4 capas a la vez; `main.py` es el único que además conoce `db.py` y
-`spreadsheet.py`.
+`spreadsheet.py`. `main.py` agrega `src/cartera/` al `sys.path` al arrancar
+(`sys.path.insert(0, str(BASE_DIR / "src" / "cartera"))`), así que dentro de
+`src/cartera/` los módulos se importan igual que si estuvieran en la raíz
+(sin cambios respecto al layout plano). Los tests usan la misma
+configuración vía `pyproject.toml` (`[tool.pytest.ini_options] pythonpath =
+["src/cartera"]`).
 
 ## Proceso original (Control Flow de `CL_Proc_Carga_Cartera.dtsx`)
 

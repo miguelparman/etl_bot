@@ -18,46 +18,51 @@ La migración se hizo en 2 fases dentro de este mismo proyecto:
 
 ## Arquitectura
 
-Modular por componentes, dividida en 4 capas que replican 1:1 las etapas del
-proceso original (extracción, validación, transformación, carga), cada una
-en su propia carpeta — sin capas domain/application/infrastructure ni
-interfaces `Protocol` de por medio (mismo patrón que `08_cartera`):
+**"src layout"**: en la raíz del proyecto solo quedan `README.md`,
+`.gitignore`, `.env.example`, `requirements*.txt`, `pyproject.toml` y
+`main.py`. El código vive en `src/parque/`, modular por componentes,
+dividido en 4 capas que replican 1:1 las etapas del proceso original
+(extracción, validación, transformación, carga), cada una en su propia
+carpeta — sin capas domain/application/infrastructure ni interfaces
+`Protocol` de por medio (mismo patrón plano que `08_cartera`/`04_usuarios`/
+`02_ventas`, solo que aquí además separado de la raíz del repo):
 
 ```
-sharepoint/
-├── auth.py             # get_graph_token(): OAuth2 client-credentials contra Microsoft Graph
-├── client.py            # SharePointClient: resolve_site/resolve_drive + download_file (nuevo)
-└── reader.py             # SharePointCsvReader.leer_csv(): descarga y parsea el CSV a DataFrame
-
-extraccion/
-└── extractor.py         # extraer(): descarga el CSV del flujo (Origen OLE DB 'PQE_FIJO'/'PQE_MO')
-
-validacion/
-└── validator.py         # columnas esperadas, filtro 'WHERE periodo = ?', largos máximos (FailComponent)
-
-transformacion/
-└── transformer.py       # reordena columnas al orden del Destino OLE DB
-
-carga/
-└── loader.py             # Fase 1: TRUNCATE + inserción masiva (_ACTUAL)
-                          # Fase 2: DELETE por periodo + INSERT...SELECT desde _ACTUAL (_HISTORICO)
-
-pipeline.py               # ParquePipeline: orquesta las 2 ramas (FIJO, MOVIL),
-                           # cada una independiente; dentro de cada rama,
-                           # _HISTORICO depende de que _ACTUAL cargue sin error
-
-models.py                 # Value objects: ColumnaSpec, ParqueFlowSpec, ResultadoFlujo,
-                           # ResultadoHistorico, ResultadoRama, ResultadoPipeline
-exceptions.py              # Excepciones del proceso (ExtraccionError, ValidacionError, ...)
-mappings.py                 # Columnas/anchos/tablas de cada rama, incl. tabla/SQL de HISTORICO
-sql.py                       # SQL literal migrado (TRUNCATE, DELETE de HISTORICO)
-
-db.py                       # DatabaseGateway (pyodbc) + fábrica de conexiones (Connection Manager 'CL_PLANTA')
-config.py                    # Carga de '.env' -> Settings (sin credenciales embebidas)
-logging_setup.py              # Logging (archivo + consola)
-
-main.py                       # CLI + composition root
+30_parque/
+├── README.md, .gitignore, .env.example, requirements*.txt, pyproject.toml
+├── main.py                     CLI + composition root
+├── tests/unit/                  fakes + tests por capa
+└── src/parque/                   todo el codigo de la aplicacion
+    ├── sharepoint/
+    │   ├── auth.py              get_graph_token(): OAuth2 client-credentials contra Microsoft Graph
+    │   ├── client.py             SharePointClient: resolve_site/resolve_drive + download_file
+    │   └── reader.py              SharePointCsvReader.leer_csv(): descarga y parsea el CSV a DataFrame
+    │
+    ├── extraccion/extractor.py     extraer(): descarga el CSV del flujo (Origen OLE DB 'PQE_FIJO'/'PQE_MO')
+    ├── validacion/validator.py     columnas esperadas, filtro 'WHERE periodo = ?', largos máximos (FailComponent)
+    ├── transformacion/transformer.py reordena columnas al orden del Destino OLE DB
+    ├── carga/loader.py              Fase 1: TRUNCATE + inserción masiva (_ACTUAL)
+    │                                Fase 2: DELETE por periodo + INSERT...SELECT desde _ACTUAL (_HISTORICO)
+    │
+    ├── pipeline.py                  ParquePipeline: orquesta las 2 ramas (FIJO, MOVIL),
+    │                                cada una independiente; dentro de cada rama,
+    │                                _HISTORICO depende de que _ACTUAL cargue sin error
+    ├── models.py                    Value objects: ColumnaSpec, ParqueFlowSpec, ResultadoFlujo,
+    │                                ResultadoHistorico, ResultadoRama, ResultadoPipeline
+    ├── exceptions.py                Excepciones del proceso (ExtraccionError, ValidacionError, ...)
+    ├── mappings.py                  Columnas/anchos/tablas de cada rama, incl. tabla/SQL de HISTORICO
+    ├── sql.py                       SQL literal migrado (TRUNCATE, DELETE de HISTORICO)
+    ├── db.py                        DatabaseGateway (pyodbc) + fábrica de conexiones (Connection Manager 'CL_PLANTA')
+    ├── config.py                    Carga de '.env' -> Settings (sin credenciales embebidas)
+    └── logging_setup.py             Logging (archivo + consola)
 ```
+
+`main.py` agrega `src/parque/` al `sys.path` al arrancar
+(`sys.path.insert(0, str(BASE_DIR / "src" / "parque"))`), así que dentro de
+`src/parque/` los módulos se importan igual que si estuvieran en la raíz
+(`import mappings`, `from db import DatabaseGateway`, etc. — sin cambios
+respecto al layout plano). Los tests usan la misma configuración vía
+`pyproject.toml` (`[tool.pytest.ini_options] pythonpath = ["src/parque"]`).
 
 `extractor.py`, `validator.py`, `transformer.py` y `loader.py` reciben un
 `DatabaseGateway`/`SharePointCsvReader` (o duck-types equivalentes, como los

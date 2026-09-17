@@ -8,8 +8,8 @@ para el detalle completo):
 
     CARGA CARTERA TEMPORAL -> CARGA CARTERA ACTUAL -> HISTORICO CARTERA
 
-Arquitectura (modular, dividida en las 4 capas del proceso original, una
-carpeta por capa):
+Arquitectura ("src layout": codigo en src/cartera/, modular, dividida en
+las 4 capas del proceso original, una carpeta por capa):
     extraccion/extractor.py       Extraccion: Excel -> DataFrame saneado.
     validacion/validator.py       Validacion: los 4 controles de la tarea 'VALIDA'.
     transformacion/transformer.py Transformacion: CARGA DNI, ACTUALIZA STATUS,
@@ -50,7 +50,7 @@ import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(BASE_DIR))  # permite 'import mappings', 'import sql', etc. al correr como script suelto
+sys.path.insert(0, str(BASE_DIR / "src" / "cartera"))  # permite 'import mappings', 'import sql', etc. al correr como script suelto
 
 from config import cargar_configuracion
 from db import DatabaseGateway, crear_conexion

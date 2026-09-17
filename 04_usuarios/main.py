@@ -1,8 +1,8 @@
 """Migracion a Python de 5 paquetes SSIS 'USUARIOS_*.dtsx' (Chile): parque de
 clientes, retenciones, intenciones de baja, items Amdocs y base SAIP.
 
-Arquitectura (modular, dividida en las 4 capas del proceso original, una
-carpeta por capa):
+Arquitectura ("src layout": codigo en src/usuarios/, modular, dividida en
+las 4 capas del proceso original, una carpeta por capa):
     sharepoint/                   Adaptadores Microsoft Graph: auth.py
                                    (token), client.py (resolver site/drive,
                                    descargar archivo), reader.py (CSV ->
@@ -59,7 +59,7 @@ import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(BASE_DIR))  # permite 'import mappings', 'import sql', etc. al correr como script suelto
+sys.path.insert(0, str(BASE_DIR / "src" / "usuarios"))  # permite 'import mappings', 'import sql', etc. al correr como script suelto
 
 import mappings
 from config import cargar_configuracion
