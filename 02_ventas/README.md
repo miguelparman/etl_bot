@@ -34,11 +34,13 @@ carpeta — sin capas domain/application/infrastructure ni interfaces
 ```
 02_ventas/
 ├── README.md, .gitignore, .env.example, requirements*.txt, pyproject.toml
-├── main.py                          CLI + composition root
-├── copiar_funnel_ventas.py          Paso 0a (manual): copia 'FUNNEL VENTAS V2.xlsx'
-│                                    del sitio BPO a '07 CROSS'
-├── exportar_senhalizaciones_csv.py Paso 0b (manual o programado antes de
-│                                    correr Señalizaciones): descarga el
+├── main.py                          CLI + composition root: corre el Paso 0
+│                                    que corresponda antes de cada paquete
+├── copiar_funnel_ventas.py          Paso 0a (main.py lo llama antes de
+│                                    'ventas'/'todos'): copia 'FUNNEL VENTAS
+│                                    V2.xlsx' del sitio BPO a '07 CROSS'
+├── exportar_senhalizaciones_csv.py Paso 0b (main.py lo llama antes de
+│                                    'senalizaciones'/'todos'): descarga el
 │                                    formulario de Google Sheets y sube
 │                                    'Señalizaciones.csv' a '07 CROSS'
 ├── tests/unit/                       fakes + tests por capa
@@ -116,16 +118,24 @@ Registration/credenciales (`TENANT_ID`/... para `ReportingFractalia`,
 el endpoint de copia asíncrona nativo de Graph (que solo copia dentro del
 mismo tenant/token): se descarga con el token de `BPO`
 (`SharePointClient.download_file`) y se sube con el token de
-`ReportingFractalia` (`SharePointClient.upload_file`). Se corre a mano
-cuando el usuario actualiza el Excel de origen; no lo invoca `main.py`.
+`ReportingFractalia` (`SharePointClient.upload_file`). `main.py` llama a
+`copiar_funnel_ventas()` automáticamente antes de correr el paquete
+`ventas`/`todos` (equivalente al Execute Process Task que en el `.dtsx`
+original corría dentro del propio Control Flow) — no hace falta correrlo
+aparte. El script sigue siendo ejecutable suelto (`python
+copiar_funnel_ventas.py`) para refrescar el Excel sin correr el resto del
+pipeline.
 
 ### Paso 0b: exportar `Señalizaciones.csv` a `07 CROSS`
 
 `exportar_senhalizaciones_csv.py` descarga el CSV publicado de Google
 Sheets/Forms (mismo link que usaba `Ch_Senhalizaciones.py`) y lo sube a
 `07 CROSS` con el token de `ReportingFractalia` (`upload_file`), con `;`
-como delimitador de salida. Igual que el paso 0a, se corre a mano/programado
-antes de `main.py --paquete senalizaciones`; no lo invoca `main.py`.
+como delimitador de salida. Igual que el paso 0a, `main.py` llama a
+`subir_senhalizaciones_csv()` automáticamente antes de correr el paquete
+`senalizaciones`/`todos` — no hace falta correrlo aparte. El script sigue
+siendo ejecutable suelto (`python exportar_senhalizaciones_csv.py`) para
+refrescar el CSV sin correr el resto del pipeline.
 
 ## Destino SQL Server
 
@@ -276,6 +286,7 @@ truncar datos.
 python main.py --fecha 2026-08-01                 # corre los 2 paquetes en orden (0101 -> 0102)
 python main.py --fecha 2026-08-01 --paquete ventas # corre solo Ventas
 python main.py --paquete senalizaciones            # no usa --fecha
-python main.py                                     # usa VAR_FECHA de .env
-python copiar_funnel_ventas.py                      # paso 0, manual
+python main.py                                     # usa VAR_FECHA de .env (corre tambien el Paso 0 de cada paquete)
+python copiar_funnel_ventas.py                      # paso 0a suelto: solo refresca el Excel, sin correr el pipeline
+python exportar_senhalizaciones_csv.py              # paso 0b suelto: solo refresca el CSV, sin correr el pipeline
 ```

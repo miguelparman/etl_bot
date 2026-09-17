@@ -1,7 +1,11 @@
-"""Paso 0 (previo al pipeline, se corre a mano o programado antes de
-'python main.py --paquete senalizaciones'): descarga las respuestas del
-formulario de señalizaciones publicadas en Google Sheets y las sube como
-'Señalizaciones.csv' a la carpeta '07 CROSS' de SharePoint.
+"""Paso 0: descarga las respuestas del formulario de señalizaciones
+publicadas en Google Sheets y las sube como 'Señalizaciones.csv' a la
+carpeta '07 CROSS' de SharePoint.
+
+'main.py' llama a 'subir_senhalizaciones_csv()' automaticamente antes de
+correr el paquete 'senalizaciones' (o 'todos') -- no hace falta correr este
+script aparte para eso. Se deja como script standalone (ver 'Uso' abajo)
+solo para poder refrescar el CSV a mano sin correr el resto del pipeline.
 
 Reemplaza al Execute Process Task 'Descargar googledrive señalizaciones'
 del .dtsx original (`CROSS 0101 SSIS_CL_Senalizaciones.dtsx`), que llamaba
@@ -51,7 +55,7 @@ sys.path.insert(0, str(BASE_DIR / "src" / "ventas"))
 
 import mappings
 from config import cargar_configuracion
-from exceptions import VentasError
+from exceptions import ExtraccionError, VentasError
 from logging_setup import NOMBRE_LOGGER, configurar_logging
 from sharepoint.auth import get_graph_token
 from sharepoint.client import SharePointClient
@@ -93,14 +97,35 @@ def _generar_csv() -> bytes:
     return buffer.getvalue().encode("utf-8")
 
 
+def subir_senhalizaciones_csv(client: SharePointClient, drive_id: str, folder_path: str) -> int:
+    """Descarga el formulario de Google Sheets y sube (reemplazando)
+    'Señalizaciones.csv' a 'folder_path', reutilizando un SharePointClient ya
+    autenticado contra el tenant destino (mismo que usan los Origen
+    Excel/CSV de main.py). Devuelve los bytes subidos. Levanta ExtraccionError
+    ante cualquier fallo de red/Graph -- lo que llama a esta funcion decide
+    si aborta o no."""
+    try:
+        logger.info("Descargando formulario de señalizaciones de Google Sheets...")
+        contenido = _generar_csv()
+        folder_id = client.resolve_folder(drive_id, folder_path)
+
+        logger.info(
+            "Subiendo '%s' (%s bytes) hacia carpeta '%s'...",
+            mappings.ARCHIVO_SENHALIZACIONES_CSV,
+            len(contenido),
+            folder_path,
+        )
+        client.upload_file(drive_id, folder_id, mappings.ARCHIVO_SENHALIZACIONES_CSV, contenido)
+        return len(contenido)
+    except Exception as exc:
+        raise ExtraccionError(f"No se pudo exportar '{mappings.ARCHIVO_SENHALIZACIONES_CSV}': {exc}") from exc
+
+
 def main() -> int:
     settings = cargar_configuracion(BASE_DIR)
     configurar_logging(settings.log_file)
 
     try:
-        logger.info("Descargando formulario de señalizaciones de Google Sheets...")
-        contenido = _generar_csv()
-
         token = get_graph_token(
             settings.sharepoint.tenant_id,
             settings.sharepoint.client_id,
@@ -110,16 +135,8 @@ def main() -> int:
         client = SharePointClient(token, settings.sharepoint.timeout_ms)
         site_id = client.resolve_site(settings.sharepoint.hostname, settings.sharepoint.site_path)
         drive_id = client.resolve_drive(site_id, settings.sharepoint.drive_name)
-        folder_id = client.resolve_folder(drive_id, settings.sharepoint.folder_path)
 
-        logger.info(
-            "Subiendo '%s' (%s bytes) hacia sitio '%s', carpeta '%s'...",
-            mappings.ARCHIVO_SENHALIZACIONES_CSV,
-            len(contenido),
-            settings.sharepoint.site_path,
-            settings.sharepoint.folder_path,
-        )
-        client.upload_file(drive_id, folder_id, mappings.ARCHIVO_SENHALIZACIONES_CSV, contenido)
+        subir_senhalizaciones_csv(client, drive_id, settings.sharepoint.folder_path)
 
         logger.info("Exportacion completada.")
         return 0

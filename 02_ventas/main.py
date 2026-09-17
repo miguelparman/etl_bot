@@ -30,11 +30,19 @@ entrada; el codigo vive en src/ventas/, modular y plano -- dividido en las
                                    cada Execute SQL Task.
     db.py                         Adaptador concreto: pyodbc (SQL Server).
     config.py, logging_setup.py   Configuracion via '.env' y logging.
-    copiar_funnel_ventas.py       Paso 0 (previo, no se corre desde aqui):
-                                   copia 'FUNNEL VENTAS V2.xlsx' del sitio
-                                   BPO a '07 CROSS' via Microsoft Graph.
+    copiar_funnel_ventas.py       Paso 0a: copia 'FUNNEL VENTAS V2.xlsx' del
+                                   sitio BPO a '07 CROSS' via Microsoft Graph.
+                                   main.py llama a copiar_funnel_ventas() antes
+                                   de correr el paquete 'ventas'/'todos' -- ver
+                                   ese archivo para correrlo suelto.
+    exportar_senhalizaciones_csv.py Paso 0b: sube 'Señalizaciones.csv' (Google
+                                   Sheets) a '07 CROSS'. main.py llama a
+                                   subir_senhalizaciones_csv() antes de correr
+                                   el paquete 'senalizaciones'/'todos'.
     main.py (este archivo)        Composition root: arma db.py + el cliente
-                                   de SharePoint y los pasa a VentasPipeline.
+                                   de SharePoint, corre el Paso 0 que
+                                   corresponda segun --paquete, y pasa el
+                                   cliente a VentasPipeline.
 
 Configuracion:
     Los valores se leen del archivo '.env' (junto a este script; ver
@@ -57,11 +65,13 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR / "src" / "ventas"))  # permite 'import mappings', 'import sql', etc. al correr como script suelto
 
-from config import cargar_configuracion
+from config import cargar_configuracion, cargar_configuracion_origen
+from copiar_funnel_ventas import copiar_funnel_ventas
 from db import DatabaseGateway, crear_conexion
 from exceptions import PipelineError, VentasError
+from exportar_senhalizaciones_csv import subir_senhalizaciones_csv
 from logging_setup import NOMBRE_LOGGER, configurar_logging
-from mappings import CSV_DELIMITER
+from mappings import ARCHIVO_FUNNEL_VENTAS_XLSX, ARCHIVO_SENHALIZACIONES_CSV, CSV_DELIMITER
 from pipeline import VentasPipeline
 from sharepoint.auth import get_graph_token
 from sharepoint.client import SharePointClient
@@ -117,6 +127,20 @@ def main() -> int:
         drive_id = client.resolve_drive(site_id, settings.sharepoint.drive_name)
         csv_reader = SharePointCsvReader(client, drive_id, settings.sharepoint.folder_path, delimiter=CSV_DELIMITER)
         excel_reader = SharePointExcelReader(client, drive_id, settings.sharepoint.folder_path)
+
+        # Paso 0: refresca en '07 CROSS' los origenes que antes solo se
+        # actualizaban a mano (ver copiar_funnel_ventas.py/
+        # exportar_senhalizaciones_csv.py) -- el .dtsx original si bajaba el
+        # formulario de señalizaciones como parte del propio Control Flow
+        # (Execute Process Task), asi que esto replica ese comportamiento en
+        # vez de depender de que alguien corra los scripts sueltos antes.
+        if args.paquete in ("senalizaciones", "todos"):
+            logger.info("Paso 0b: actualizando '%s' desde Google Sheets...", ARCHIVO_SENHALIZACIONES_CSV)
+            subir_senhalizaciones_csv(client, drive_id, settings.sharepoint.folder_path)
+        if args.paquete in ("ventas", "todos"):
+            origen = cargar_configuracion_origen(BASE_DIR)
+            logger.info("Paso 0a: actualizando '%s' desde el sitio BPO...", ARCHIVO_FUNNEL_VENTAS_XLSX)
+            copiar_funnel_ventas(origen, client, drive_id, settings.sharepoint.folder_path)
 
         conn = crear_conexion(settings.db)
 

@@ -81,8 +81,17 @@ def convertir_tipos(df: pd.DataFrame, columnas: tuple[ColumnaSpec, ...]) -> pd.D
             # Bindear un Timestamp con hora contra una columna 'date' via
             # ODBC lanza 'Datetime field overflow' (visto en produccion, 2026-09).
             df[columna.nombre] = convertido.dt.date
-        elif not columna.estricto and columna.longitud_max > 0:
-            df[columna.nombre] = df[columna.nombre].astype("string").str.slice(0, columna.longitud_max)
+        elif columna.tipo == "texto":
+            # Siempre se castea a string, no solo cuando hay que truncar
+            # (estricto=False): si el origen quedo con dtype numerico (p.ej.
+            # un DNI/RUT sin dtype=str forzado en la lectura), este cast es
+            # la unica proteccion contra que el valor viaje como float y
+            # llegue a SQL Server con un '.0' agregado (ver
+            # SharePointExcelReader.leer_hoja para la causa raiz).
+            valores = df[columna.nombre].astype("string")
+            if not columna.estricto and columna.longitud_max > 0:
+                valores = valores.str.slice(0, columna.longitud_max)
+            df[columna.nombre] = valores
     return df
 
 

@@ -58,7 +58,14 @@ class SharePointExcelReader:
     """Lee una hoja puntual de un workbook Excel publicado en SharePoint.
     Equivalente a un Origen de Excel (Provider=Microsoft.ACE.OLEDB) apuntando
     a 'HOJA$' -- se descarga el workbook completo (Graph no permite leer una
-    hoja parcialmente) y se parsea solo la hoja pedida con openpyxl."""
+    hoja parcialmente) y se parsea solo la hoja pedida con openpyxl.
+
+    'dtype=str' (mismo motivo que SharePointCsvReader): sin esto, una columna
+    de texto como 'RUT EJECUTIVO'/'DNI' que mezcla valores con forma de
+    numero y alguna celda vacia queda como float64 (NaN fuerza el upcast) --
+    se pierden los ceros iniciales y se agrega '.0' al final de cada valor
+    (confirmado con datos reales, 2026-09: el .dtsx original preservaba estas
+    columnas como texto)."""
 
     def __init__(self, client: SharePointClient, drive_id: str, folder_path: str) -> None:
         self._client = client
@@ -73,6 +80,6 @@ class SharePointExcelReader:
             raise ExtraccionError(f"No se pudo descargar '{ruta}' desde SharePoint: {exc}") from exc
 
         try:
-            return pd.read_excel(BytesIO(contenido), sheet_name=hoja, engine="openpyxl")
+            return pd.read_excel(BytesIO(contenido), sheet_name=hoja, engine="openpyxl", dtype=str)
         except Exception as exc:
             raise ExtraccionError(f"No se pudo parsear la hoja '{hoja}' de '{nombre_archivo}': {exc}") from exc

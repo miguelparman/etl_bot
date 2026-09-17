@@ -55,6 +55,15 @@ class RegistrarWorklogsUseCase:
         return summary
 
     def _procesar_fila(self, row: WorklogRow) -> WorklogOutcome:
+        """Crea o actualiza el worklog de una fila según la columna 'Accion'.
+
+        - Accion != 'Actualizar': se crea un worklog nuevo, salvo que la fila
+          ya tenga 'Registrado' empezando por 'Sí' (se salta para no duplicar).
+        - Accion == 'Actualizar': se actualiza el worklog existente. Requiere
+          que la fila tenga un WorklogID guardado (el que quedó al crearlo la
+          primera vez); si falta, se reporta error sin llamar a Jira. Además,
+          en este modo NO se salta aunque 'Registrado' ya diga 'Sí'.
+        """
         try:
             ticket = Ticket.parse(row.ticket_raw)
         except DomainError:

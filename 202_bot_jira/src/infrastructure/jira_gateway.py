@@ -21,6 +21,11 @@ class JiraRestWorklogGateway:
     def update(
         self, ticket: str, worklog_id: str, started: str, time_spent: str, comentario: str
     ) -> JiraWorklogResult:
+        """Reemplaza started/timeSpent/comment de un worklog ya existente (PUT, espera 200).
+
+        worklog_id debe ser el id devuelto por Jira al crear el worklog
+        (guardado por ExcelWorklogRepository en la columna 'WorklogID').
+        """
         url = f"{self._base_url}/rest/api/2/issue/{ticket}/worklog/{worklog_id}"
         resp = requests.put(
             url, json=self._payload(started, time_spent, comentario), auth=self._auth, timeout=self._timeout

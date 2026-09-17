@@ -8,6 +8,9 @@ from openpyxl import load_workbook
 from ..domain.models import WorklogOutcome, WorklogRow
 
 _TRACKED_COLUMNS = ("Registrado", "Accion", "WorklogID")
+# Convención de la plantilla: poner 'Actualizar' en 'Accion' hace que la fila
+# actualice el worklog guardado en 'WorklogID' en vez de crear uno nuevo
+# (ver WorklogRow.es_actualizacion y RegistrarWorklogsUseCase._procesar_fila).
 
 
 class ExcelWorklogRepository:

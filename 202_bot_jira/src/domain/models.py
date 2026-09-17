@@ -19,6 +19,12 @@ class WorklogRow:
 
     @property
     def es_actualizacion(self) -> bool:
+        """True si la columna 'Accion' del Excel dice 'Actualizar' (case-insensitive).
+
+        Esta convención es lo que decide si el caso de uso llama a
+        JiraWorklogGateway.update en vez de .create; ver
+        RegistrarWorklogsUseCase._procesar_fila.
+        """
         return self.accion.strip().lower() == "actualizar"
 
     @property
