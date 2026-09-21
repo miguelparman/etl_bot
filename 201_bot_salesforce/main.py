@@ -48,7 +48,18 @@ except Exception:
     with open(fallback_dir / "startup_error.log", "a", encoding="utf-8") as fh:
         fh.write(f"\n{datetime.now():%Y-%m-%d %H:%M:%S} | Fallo al iniciar la aplicacion:\n")
         fh.write(traceback.format_exc())
-    raise
+
+    if sys.stdout is not None:
+        traceback.print_exc()
+        print("\n" + "=" * 50)
+        print("ERROR: no se pudo iniciar el bot (revise .env / dependencias).")
+        print("Detalle guardado en logs/startup_error.log")
+        print("=" * 50)
+        try:
+            input("\nPresione Enter para cerrar esta ventana...")
+        except (EOFError, OSError):
+            pass
+    sys.exit(1)
 
 
 def main() -> int:
@@ -155,5 +166,30 @@ def _run() -> int:
     return 1 if summary.failed else 0
 
 
+def _pause_before_exit() -> None:
+    """Mantiene la consola abierta tras un error para que se pueda leer.
+
+    Sin esto, al ejecutarse desde el Programador de tareas (run_task.bat usa
+    python.exe justamente para que la consola sea visible) o con doble clic,
+    la ventana se cierra en el instante en que el proceso termina y el aviso
+    de error (credenciales invalidas, fallo de descarga, etc.) desaparece
+    antes de que alguien llegue a leerlo. Solo se pausa si hay consola: bajo
+    pythonw.exe (sys.stdout es None) nadie podria presionar Enter y se
+    bloquearian las ejecuciones desatendidas para siempre.
+    """
+    if sys.stdout is None:
+        return
+    try:
+        input("\nPresione Enter para cerrar esta ventana...")
+    except (EOFError, OSError):
+        pass
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    exit_code = main()
+    if exit_code != 0:
+        print("\n" + "=" * 50)
+        print("ERROR: la ejecucion del bot fallo. Revise el detalle arriba y en logs/.")
+        print("=" * 50)
+        _pause_before_exit()
+    sys.exit(exit_code)
