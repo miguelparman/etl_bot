@@ -29,6 +29,23 @@ def test_convertir_tipos_numero_no_estricto_coerciona_a_null():
     assert pd.isna(resultado["N"].iloc[1])
 
 
+def test_convertir_tipos_entero_redondea_y_descarta_decimales():
+    columnas = (ColumnaSpec("N", estricto=True, tipo="entero"),)
+    df = pd.DataFrame({"N": ["12.4", "12.6"]})
+    resultado = transformer.convertir_tipos(df, columnas)
+    assert resultado["N"].iloc[0] == 12
+    assert resultado["N"].iloc[1] == 13
+    assert resultado["N"].dtype == "Int64"
+
+
+def test_convertir_tipos_entero_no_estricto_coerciona_a_null():
+    columnas = (ColumnaSpec("N", estricto=False, tipo="entero"),)
+    df = pd.DataFrame({"N": ["12", "no-numero"]})
+    resultado = transformer.convertir_tipos(df, columnas)
+    assert resultado["N"].iloc[0] == 12
+    assert pd.isna(resultado["N"].iloc[1])
+
+
 def test_convertir_tipos_fecha_no_estricto_coerciona_a_null():
     columnas = (ColumnaSpec("F", estricto=False, tipo="fecha"),)
     df = pd.DataFrame({"F": ["2026-01-01", "no-fecha"]})
@@ -92,6 +109,28 @@ def test_vaciar_valores_que_excedan_ancho_ignora_columnas_numericas_y_fecha():
     df = pd.DataFrame({"N": ["123456789012345678901234567890"]})
     resultado = transformer.vaciar_valores_que_excedan_ancho(df, columnas, "test")
     assert resultado["N"].iloc[0] == "123456789012345678901234567890"  # no se toca
+
+
+def test_vaciar_valores_que_excedan_ancho_ignora_columnas_no_estrictas():
+    """Las columnas 'estricto=False' (IgnoreFailure) no se vacian aqui --
+    quedan intactas para que convertir_tipos() las trunque al ancho
+    declarado en vez de perder el valor completo (ver
+    'SEÑALIZACION // EJECUTIVO DE VENTAS', README)."""
+    columnas = (ColumnaSpec("T", 3, estricto=False),)
+    df = pd.DataFrame({"T": ["abcdef"]})
+    resultado = transformer.vaciar_valores_que_excedan_ancho(df, columnas, "test")
+    assert resultado["T"].iloc[0] == "abcdef"  # no se toca aqui
+
+
+def test_convertir_tipos_texto_no_estricto_trunca_en_vez_de_vaciar_tras_vaciar_valores():
+    """Reproduce el flujo real del pipeline: vaciar_valores_que_excedan_ancho()
+    seguido de convertir_tipos() -- el valor de una columna IgnoreFailure
+    debe llegar truncado, no vacio."""
+    columnas = (ColumnaSpec("SEÑALIZACION // EJECUTIVO DE VENTAS", 15, estricto=False),)
+    df = pd.DataFrame({"SEÑALIZACION // EJECUTIVO DE VENTAS": ["Juan Carlos Perez Soto"]})
+    df = transformer.vaciar_valores_que_excedan_ancho(df, columnas, "test")
+    resultado = transformer.convertir_tipos(df, columnas)
+    assert resultado["SEÑALIZACION // EJECUTIVO DE VENTAS"].iloc[0] == "Juan Carlos Per"
 
 
 def test_corregir_dni_cero_perdido_ejecuta_un_update_por_par():

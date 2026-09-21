@@ -39,13 +39,16 @@ def seleccionar_columnas(df: pd.DataFrame, columnas: tuple[str, ...]) -> pd.Data
 
 
 def convertir_tipos(df: pd.DataFrame, columnas: tuple[ColumnaSpec, ...]) -> pd.DataFrame:
-    """Data Convert generico: para columnas tipo='numero'/'fecha', castea
-    con pandas y, si 'estricto=True' (FailComponent), levanta ValidacionError
-    ante un valor que no parsea; si 'estricto=False' (IgnoreFailure), el
-    valor invalido queda NULL sin abortar. Para columnas tipo='texto' con
-    'estricto=False', trunca en silencio al ancho declarado (el caso
-    'estricto=True' ya fue validado por validacion.validar_longitudes antes
-    de llegar aqui, ver README)."""
+    """Data Convert generico: para columnas tipo='numero'/'entero'/'fecha',
+    castea con pandas y, si 'estricto=True' (FailComponent), levanta
+    ValidacionError ante un valor que no parsea; si 'estricto=False'
+    (IgnoreFailure), el valor invalido queda NULL sin abortar. 'numero' emula
+    un destino DT_R8 (float, con decimales); 'entero' emula un destino DT_I4
+    (redondea y castea a 'Int64' nullable, sin decimales) -- ver
+    ColumnaSpec.tipo. Para columnas tipo='texto' con 'estricto=False',
+    trunca en silencio al ancho declarado (el caso 'estricto=True' ya fue
+    validado por validacion.validar_longitudes antes de llegar aqui, ver
+    README)."""
     df = df.copy()
     for columna in columnas:
         if columna.tipo == "numero":
@@ -59,6 +62,25 @@ def convertir_tipos(df: pd.DataFrame, columnas: tuple[ColumnaSpec, ...]) -> pd.D
                         f"{df.index[invalidos].tolist()} (FailComponent)."
                     )
             df[columna.nombre] = convertido
+        elif columna.tipo == "entero":
+            # Emula el Data Convert casteando a DT_I4 (no DT_R8): sin este
+            # redondeo/cast a entero, la columna queda float64 y viaja con
+            # decimales al INSERT -- antes (via SSIS) siempre llegaba como
+            # entero, asi que un valor real con parte fraccionaria (p.ej.
+            # 'TOTAL INGRESADO' con centavos de un calculo previo) se veia
+            # sin decimales en meses anteriores y con decimales aqui (visto
+            # en produccion, 2026-09). 'Int64' (nullable) preserva NULL para
+            # IgnoreFailure sin volver la columna float.
+            original = df[columna.nombre]
+            convertido = pd.to_numeric(original, errors="coerce")
+            if columna.estricto:
+                invalidos = convertido.isna() & original.notna()
+                if invalidos.any():
+                    raise ValidacionError(
+                        f"La columna '{columna.nombre}' tiene valores no numericos en las filas "
+                        f"{df.index[invalidos].tolist()} (FailComponent)."
+                    )
+            df[columna.nombre] = convertido.round().astype("Int64")
         elif columna.tipo == "fecha":
             original = df[columna.nombre]
             # 'dayfirst=True': el origen es texto en formato chileno/es-CL
@@ -90,6 +112,15 @@ def convertir_tipos(df: pd.DataFrame, columnas: tuple[ColumnaSpec, ...]) -> pd.D
             # SharePointExcelReader.leer_hoja para la causa raiz).
             valores = df[columna.nombre].astype("string")
             if not columna.estricto and columna.longitud_max > 0:
+                excede = valores.str.len() > columna.longitud_max
+                if excede.any():
+                    logger.warning(
+                        "%s valor(es) de '%s' exceden %s caracteres, se truncan a ese ancho (IgnoreFailure): filas %s",
+                        int(excede.sum()),
+                        columna.nombre,
+                        columna.longitud_max,
+                        df.index[excede].tolist(),
+                    )
                 valores = valores.str.slice(0, columna.longitud_max)
             df[columna.nombre] = valores
     return df
@@ -135,19 +166,28 @@ def corregir_rut_nombre_invertidos(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def vaciar_valores_que_excedan_ancho(df: pd.DataFrame, columnas: tuple[ColumnaSpec, ...], contexto: str) -> pd.DataFrame:
-    """Cuando un valor de una columna de texto excede su ancho maximo (y no
-    se pudo recuperar con una limpieza especifica como
-    corregir_rut_nombre_invertidos), se deja vacio (None) en esa columna en
-    vez de descartar la fila completa o abortar toda la carga -- el resto
-    de la fila sigue siendo valida y se carga igual. A pedido del usuario
-    tras revisar datos reales del formulario: reemplaza, para este
-    proyecto, el aborto estricto (FailComponent) que tenia el .dtsx
-    original ante un valor demasiado largo (ver README, 'Notas de
+    """Solo para columnas de texto 'estricto=True' (FailComponent en el
+    .dtsx original): cuando un valor excede su ancho maximo (y no se pudo
+    recuperar con una limpieza especifica como corregir_rut_nombre_invertidos),
+    se deja vacio (None) en esa columna en vez de descartar la fila completa
+    o abortar toda la carga -- el resto de la fila sigue siendo valida y se
+    carga igual. A pedido del usuario tras revisar datos reales del
+    formulario: reemplaza, para este proyecto, el aborto estricto que tenia
+    el .dtsx original ante un valor demasiado largo (ver README, 'Notas de
     fidelidad'; validacion.validar_longitudes documenta el comportamiento
-    original y sigue disponible/testeada, pero ya no se usa como gate)."""
+    original y sigue disponible/testeada, pero ya no se usa como gate).
+
+    Las columnas 'estricto=False' (IgnoreFailure) NO pasan por aqui: se
+    dejan intactas para que convertir_tipos() las trunque al ancho
+    declarado (en vez de vaciarlas) -- esa es la disposicion de truncamiento
+    real del .dtsx original para esas columnas, y vaciarlas aqui tambien
+    perdia datos reales sin necesidad (visto en produccion, 2026-09, con
+    'SEÑALIZACION // EJECUTIVO DE VENTAS': el Excel de origen trae valores
+    mas largos que los 15 caracteres declarados, y deben cargarse truncados,
+    no vacios)."""
     df = df.copy()
     for columna in columnas:
-        if columna.tipo != "texto" or columna.longitud_max <= 0:
+        if columna.tipo != "texto" or columna.longitud_max <= 0 or not columna.estricto:
             continue
         valores = df[columna.nombre].astype("string")
         excede = valores.str.len() > columna.longitud_max

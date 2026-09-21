@@ -22,7 +22,7 @@ def _fila_dni(**overrides) -> dict:
 def _fila_ventas_basev2(**overrides) -> dict:
     fila = {}
     for c in mappings.COLUMNAS_VENTAS_BASEV2:
-        if c.tipo == "numero":
+        if c.tipo in ("numero", "entero"):
             fila[c.nombre] = "1"
         elif c.tipo == "fecha":
             fila[c.nombre] = "2026-08-15"
@@ -120,7 +120,7 @@ def test_ejecutar_senalizaciones_deja_vacio_un_valor_muy_largo_sin_abortar():
 
 
 def test_ejecutar_ventas_carga_las_6_tablas_y_corre_local_al_final():
-    basev2_temp = pd.DataFrame([{c.nombre: "x" for c in mappings.COLUMNAS_VENTAS_BASEV2}])
+    basev2_temp = pd.DataFrame([_fila_ventas_basev2()])
     for extra in mappings.COLUMNAS_VENTAS_BASEV2_POST_CARGA:
         basev2_temp[extra] = "x"
     pipeline, db = _build_pipeline(basev2_temp_tabla=basev2_temp, rowcount_results=[3, 2, 1])
@@ -149,8 +149,31 @@ def test_ejecutar_ventas_carga_las_6_tablas_y_corre_local_al_final():
     assert resultado.filas_por_paso["INSERT VENTAS2"] == 1
 
 
+def test_local_recastea_numericos_tras_roundtrip_sql_evita_punto_cero():
+    # Reproduce el bug real (2026-09-17): TBL_FUNNEL_VENTAS_basev2_temp.[TOTAL
+    # INGRESADO] es 'int' en SQL Server, pero al releerla con
+    # db.read_table()/pd.DataFrame.from_records() (extractor.extraer_ventas_basev2_temp),
+    # una columna con algun NULL sube a float64 -- un valor 1 se vuelve 1.0, y
+    # como TBL_FUNNEL_VENTAS_Temp/TBL_FUNNEL_VENTAS2 son 'nvarchar' (no
+    # numericas), ese 1.0 se insertaba literalmente como texto '1.0' en vez de
+    # '1'. Se simula aqui la misma columna float64 con nulos que devolveria
+    # el roundtrip real.
+    basev2_temp = pd.DataFrame([_fila_ventas_basev2(), _fila_ventas_basev2()])
+    for extra in mappings.COLUMNAS_VENTAS_BASEV2_POST_CARGA:
+        basev2_temp[extra] = "x"
+    basev2_temp["TOTAL INGRESADO"] = pd.array([1.0, None], dtype="float64")
+
+    pipeline, db = _build_pipeline(basev2_temp_tabla=basev2_temp)
+    pipeline.ejecutar_ventas(date(2026, 8, 1))
+
+    cargado = db.inserted[mappings.TABLA_VENTAS_TEMP]
+    assert cargado["TOTAL INGRESADO"].iloc[0] == 1
+    assert str(cargado["TOTAL INGRESADO"].iloc[0]) != "1.0"
+    assert pd.isna(cargado["TOTAL INGRESADO"].iloc[1])
+
+
 def test_ejecutar_ventas_completa_dni_sup_esp_despues_de_cargar_basev2_esp_sup():
-    basev2_temp = pd.DataFrame([{c.nombre: "x" for c in mappings.COLUMNAS_VENTAS_BASEV2}])
+    basev2_temp = pd.DataFrame([_fila_ventas_basev2()])
     for extra in mappings.COLUMNAS_VENTAS_BASEV2_POST_CARGA:
         basev2_temp[extra] = "x"
     pipeline, db = _build_pipeline(basev2_temp_tabla=basev2_temp)
@@ -164,7 +187,7 @@ def test_ejecutar_ventas_completa_dni_sup_esp_despues_de_cargar_basev2_esp_sup()
 
 
 def test_ejecutar_todo_corre_senalizaciones_antes_de_ventas():
-    basev2_temp = pd.DataFrame([{c.nombre: "x" for c in mappings.COLUMNAS_VENTAS_BASEV2}])
+    basev2_temp = pd.DataFrame([_fila_ventas_basev2()])
     for extra in mappings.COLUMNAS_VENTAS_BASEV2_POST_CARGA:
         basev2_temp[extra] = "x"
     pipeline, db = _build_pipeline(basev2_temp_tabla=basev2_temp, rowcount_results=[1, 1, 1])

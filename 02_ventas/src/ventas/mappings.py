@@ -215,6 +215,12 @@ TABLA_VENTAS2 = "TBL_FUNNEL_VENTAS2"
 #
 # 'estricto=False' replica las columnas marcadas 'IgnoreFailure' en el
 # Data Convert original (ver README); el resto son 'FailComponent' (default).
+#
+# 'STB'/'BAF'/'TV'/'VOZ'/'BAM'/'TOTAL INGRESADO': el .dtsx original (Data
+# Convert 'Conversión de datos', outputColumn 'Copy of <col>') las declara
+# dataType='i4' (entero, DT_I4) pese a que el origen Excel las trae como
+# 'r8' (double) -- tipo='entero' (no 'numero') para que viajen sin
+# decimales al INSERT, igual que via SSIS (ver README, "Notas de fidelidad").
 COLUMNAS_VENTAS_BASEV2 = (
     ColumnaSpec("Fecha Ingreso", estricto=True, tipo="fecha"),
     ColumnaSpec("Tramo Ingreso", 15, estricto=True),  # fecha origen -> texto destino (asi es en el .dtsx original)
@@ -222,12 +228,12 @@ COLUMNAS_VENTAS_BASEV2 = (
     ColumnaSpec("Segmento", 25, estricto=True),
     ColumnaSpec("Servicio", 25, estricto=True),
     ColumnaSpec("Sub Servicio", 25, estricto=True),
-    ColumnaSpec("STB", estricto=True, tipo="numero"),
-    ColumnaSpec("BAF", estricto=True, tipo="numero"),
-    ColumnaSpec("TV", estricto=True, tipo="numero"),
-    ColumnaSpec("VOZ", estricto=True, tipo="numero"),
-    ColumnaSpec("BAM", estricto=True, tipo="numero"),
-    ColumnaSpec("TOTAL INGRESADO", estricto=True, tipo="numero"),
+    ColumnaSpec("STB", estricto=True, tipo="entero"),
+    ColumnaSpec("BAF", estricto=True, tipo="entero"),
+    ColumnaSpec("TV", estricto=True, tipo="entero"),
+    ColumnaSpec("VOZ", estricto=True, tipo="entero"),
+    ColumnaSpec("BAM", estricto=True, tipo="entero"),
+    ColumnaSpec("TOTAL INGRESADO", estricto=True, tipo="entero"),
     ColumnaSpec("ESTADO", 15, estricto=True),
     ColumnaSpec("MODALIDAD DE INGRESO", 15, estricto=False),
     ColumnaSpec("MOTIVO CANCELACION", 455, estricto=False),
@@ -242,7 +248,7 @@ COLUMNAS_VENTAS_BASEV2 = (
     ColumnaSpec("BACKOFFICE", 125, estricto=True),
     ColumnaSpec("RUT RAC VENTA", 15, estricto=True),
     ColumnaSpec("SEÑALIZACION // EJECUTIVO DE VENTAS", 15, estricto=False),
-    ColumnaSpec("RUT EJECUTIVO", 15, estricto=False),
+    ColumnaSpec("RUT EJECUTIVO", 15, estricto=True),  # FailComponent en el .dtsx, como el resto de las columnas RUT/RAC de esta tabla
     ColumnaSpec("NOMBRE EJECUTIVO", 125, estricto=True),
     ColumnaSpec("SUB SEGMENTO", 15, estricto=False),
     ColumnaSpec("SUPERVISOR", 125, estricto=True),
@@ -304,6 +310,19 @@ COLUMNAS_VENTAS_METAS_ORIGEN = (
 # Columnas de TBL_FUNNEL_VENTAS_basev2_temp que NO llena el Data Flow (se
 # completan despues, via Execute SQL Task, ver transformacion.py).
 COLUMNAS_VENTAS_BASEV2_POST_CARGA = ("DNI SUPERVISOR", "DNI ESPECIALISTA", "COD_DNI", "FECHA DE EVALUACION")
+
+# 'STB'/'BAF'/'TV'/'VOZ'/'BAM'/'TOTAL INGRESADO' vuelven a pasar por un cast
+# explicito a entero justo antes de cargar TBL_FUNNEL_VENTAS_Temp (ver
+# pipeline._local()). Motivo, confirmado contra el esquema real (2026-09-17):
+# aunque en 'TBL_FUNNEL_VENTAS_basev2_temp' la columna es SQL 'int', en
+# 'TBL_FUNNEL_VENTAS_Temp'/'TBL_FUNNEL_VENTAS2' es 'nvarchar' (no numerica) --
+# al releer basev2_temp desde SQL Server (db.read_table/pd.DataFrame.from_records),
+# pandas no tiene un entero nulleable nativo y sube la columna a float64 en
+# cuanto hay algun NULL de por medio, convirtiendo un valor como 1 en 1.0 --
+# que al insertarse en la columna de texto destino queda literalmente como
+# '1.0' en vez de '1' (visto en produccion, 2026-09-17). Reusa las mismas 6
+# ColumnaSpec de COLUMNAS_VENTAS_BASEV2 (mismo tipo='entero'/estricto).
+COLUMNAS_VENTAS_TEMP_ENTERO = tuple(c for c in COLUMNAS_VENTAS_BASEV2 if c.tipo == "entero")
 
 # Mapeo de columnas al pasar de TBL_FUNNEL_VENTAS_basev2_temp a
 # TBL_FUNNEL_VENTAS_Temp (Data Flow 'LOCAL\TBL_FUNNEL_VENTAS_Temp', sin

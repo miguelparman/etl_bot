@@ -226,21 +226,73 @@ tiempo total de corrida.
   antes de insertar, levantando `ValidacionError` si no es numérico
   (`transformer.convertir_tipos_metas`), en vez de dejar que pyodbc falle
   con un error genérico.
+- **`STB`/`BAF`/`TV`/`VOZ`/`BAM`/`TOTAL INGRESADO` — `ColumnaSpec.tipo='entero'`,
+  no `'numero'`**: el `.dtsx` original (`BaseV2\Conversión de datos`) declara
+  el `outputColumn` de estas 6 columnas como `dataType='i4'` (entero, DT_I4),
+  aunque el origen Excel las trae como `r8` (double). La primera versión de
+  esta migración las trataba todas como genéricas `tipo='numero'` (float,
+  sin redondear) — visto en producción (2026-09), `TOTAL INGRESADO` llegaba
+  con decimales a `TBL_FUNNEL_VENTAS2` donde antes (vía SSIS) siempre
+  llegaba entero. `tipo='entero'` (`transformer.convertir_tipos`) redondea y
+  castea a `Int64` (nullable) antes del INSERT, igual que el DT_I4 original.
 - **Disposición de error/truncamiento — `FailComponent` ya NO aborta la
   carga**: el `.dtsx` original abortaba el Data Flow completo si una
-  columna de texto excedía su ancho declarado (`ColumnaSpec.estricto=True`,
-  ver `models.py`/`mappings.py`). Tras la primera corrida real (2026-09,
-  ver más abajo) se confirmó que el formulario de origen trae respuestas
-  mal llenadas con cierta frecuencia, y bloquear todo el funnel por unas
-  pocas filas no es aceptable — a pedido explícito del usuario,
-  `transformer.vaciar_valores_que_excedan_ancho()` reemplazó ese aborto: el
-  valor que excede el ancho queda `NULL` en esa columna y el resto de la
-  fila se carga igual (para TODAS las columnas de texto, no solo las que
-  ya eran `IgnoreFailure`). `validacion.validar_longitudes()` sigue
+  columna de texto `FailComponent` (`ColumnaSpec.estricto=True`, ver
+  `models.py`/`mappings.py`) excedía su ancho declarado. Tras la primera
+  corrida real (2026-09, ver más abajo) se confirmó que el formulario de
+  origen trae respuestas mal llenadas con cierta frecuencia, y bloquear
+  todo el funnel por unas pocas filas no es aceptable — a pedido explícito
+  del usuario, `transformer.vaciar_valores_que_excedan_ancho()` reemplazó
+  ese aborto: el valor que excede el ancho queda `NULL` en esa columna y el
+  resto de la fila se carga igual. Solo aplica a columnas `estricto=True`
+  (texto) — columnas `estricto=False` (`IgnoreFailure`) ya NO pasan por
+  esta función (ver más abajo). `validacion.validar_longitudes()` sigue
   existiendo y probada (documenta el comportamiento `FailComponent`
   original), pero ya no se llama desde `pipeline.py`. Columnas
   numéricas/fecha siguen igual: `estricto=True` aborta si no parsean,
   `estricto=False` queda `NULL`.
+- **Columnas de texto `IgnoreFailure` (`estricto=False`) — truncar, no
+  vaciar**: `vaciar_valores_que_excedan_ancho()` originalmente vaciaba
+  también estas columnas al exceder su ancho, igual que las `FailComponent`
+  — pero eso no replica la disposición real de truncamiento
+  `IgnoreFailure` del `.dtsx` original (que trunca el valor al ancho
+  declarado y sigue, no lo descarta). Visto en producción (2026-09) con
+  `SEÑALIZACION // EJECUTIVO DE VENTAS` (ancho 15, `estricto=False`): el
+  Excel de origen trae valores más largos con cierta frecuencia (87 de
+  ~24.700 filas en una corrida), y quedaban en `NULL` en vez de cargarse
+  truncados — a pedido explícito del usuario, tras revisar el Excel de
+  origen. Ahora estas columnas no pasan por
+  `vaciar_valores_que_excedan_ancho()`: quedan intactas para que
+  `convertir_tipos()` las trunque al ancho declarado (comportamiento que ya
+  tenía implementado pero quedaba sin efecto, tapado por el vaciado previo).
+- **`RUT EJECUTIVO` — `estricto` invertido**: auditoría completa (2026-09-17)
+  de las 34 columnas de `COLUMNAS_VENTAS_BASEV2` contra el `outputColumn`
+  real del Data Convert en el `.dtsx` encontró que `RUT EJECUTIVO` estaba
+  declarado `estricto=False` en `mappings.py`, pero el `.dtsx` original la
+  declara `FailComponent` (`errorRowDisposition`/`truncationRowDisposition`),
+  igual que el resto de las columnas RUT de esta tabla (`Rut Empresa`,
+  `RUT BACK`, `RUT RAC VENTA`, todas `estricto=True`). Con `estricto=False`
+  un RUT EJECUTIVO demasiado largo se truncaba y cargaba en silencio (valor
+  no confiable, ya no es un RUT válido) en vez de quedar `NULL` como sus
+  columnas hermanas — y como `COD_DNI` se copia de `RUT EJECUTIVO` vía SQL
+  (`sql.SQL_COMPLETAR_DNI_SUP_ESP_COD`), el valor truncado se propagaba
+  también ahí. Corregido a `estricto=True`.
+- **`STB`/`BAF`/`TV`/`VOZ`/`BAM`/`TOTAL INGRESADO` seguían llegando como
+  `'1.0'` (texto) a `TBL_FUNNEL_VENTAS2` pese al fix de `tipo='entero'`**:
+  confirmado contra el esquema real (2026-09-17) que
+  `TBL_FUNNEL_VENTAS_Temp`/`TBL_FUNNEL_VENTAS2` declaran estas 6 columnas
+  como `nvarchar` (no numéricas) — solo `TBL_FUNNEL_VENTAS_basev2_temp` las
+  tiene como `int`. El paso `LOCAL` relee `basev2_temp` completa desde SQL
+  Server (`extractor.extraer_ventas_basev2_temp` → `db.read_table` →
+  `pd.DataFrame.from_records`); pandas no tiene un entero nulleable nativo,
+  así que cualquier columna `int` con al menos un `NULL` sube a `float64` al
+  releerla — un valor `1` se vuelve `1.0`, y al insertarse en la columna de
+  texto destino queda literalmente `'1.0'` en vez de `'1'`. El
+  `tipo='entero'` solo corregía la carga a `basev2_temp`, no este segundo
+  viaje. Fix: nuevo paso explícito en `pipeline._local()` que vuelve a
+  pasar estas 6 columnas por `transformer.convertir_tipos()`
+  (`mappings.COLUMNAS_VENTAS_TEMP_ENTERO`) justo después de releer
+  `basev2_temp` y antes de cargar `TBL_FUNNEL_VENTAS_Temp`.
 - **`RUT DE LA EMPRESA` / `NOMBRE EMPRESA` invertidos**: visto en
   producción (2026-09) — varias respuestas del formulario tienen el RUT y
   el nombre de la empresa cargados en el campo contrario.

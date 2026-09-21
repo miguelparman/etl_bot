@@ -247,6 +247,10 @@ class VentasPipeline:
     def _local(self, nombre: str, filas_por_paso: dict[str, int], fecha: date) -> None:
         self._step(nombre, "LOCAL / TRUNCATE TBL_FUNNEL_VENTAS_Temp", loader.truncar_ventas_temp, self.db)
         df = self._step(nombre, "LOCAL / TBL_FUNNEL_VENTAS_Temp / extraccion", extractor.extraer_ventas_basev2_temp, self.db)
+        df = self._step(
+            nombre, "LOCAL / TBL_FUNNEL_VENTAS_Temp / transformacion (recast numericos tras roundtrip SQL)",
+            transformer.convertir_tipos, df, mappings.COLUMNAS_VENTAS_TEMP_ENTERO,
+        )
         df = self._step(nombre, "LOCAL / TBL_FUNNEL_VENTAS_Temp / transformacion (renombre)", transformer.renombrar_basev2_a_temp, df)
         filas_por_paso["TBL_FUNNEL_VENTAS_Temp"] = self._step(
             nombre, "LOCAL / TBL_FUNNEL_VENTAS_Temp / carga", loader.cargar_ventas_temp, self.db, df

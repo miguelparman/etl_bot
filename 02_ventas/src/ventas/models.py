@@ -14,9 +14,13 @@ class ColumnaSpec:
     - tipo='texto': 'longitud_max' es el ancho WSTR/STR declarado.
       estricto=True ('FailComponent'): excede el ancho -> ValidacionError.
       estricto=False ('IgnoreFailure'): se trunca en silencio.
-    - tipo='numero'/'fecha': 'longitud_max' no aplica (queda en 0).
+    - tipo='numero'/'entero'/'fecha': 'longitud_max' no aplica (queda en 0).
       estricto=True ('FailComponent'): no parsea -> ValidacionError.
       estricto=False ('IgnoreFailure'): no parsea -> NULL (coerce), sin abortar.
+      'numero' emula un destino DT_R8 (float, admite decimales); 'entero'
+      emula un destino DT_I4 (se redondea y castea a entero -- usar cuando
+      el .dtsx original declara el output del Data Convert como DT_I4, no
+      DT_R8, aunque el origen sea numerico con decimales).
     """
 
     nombre: str
