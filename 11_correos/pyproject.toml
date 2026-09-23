@@ -1,8 +1,7 @@
 [tool.pytest.ini_options]
-# "src layout": el codigo vive en src/correos/ (config.py, db.py, mappings.py,
-# etc.), no en la raiz del proyecto (solo main.py queda ahi) -- se agrega al
-# pythonpath para que los tests (y main.py/cargar_correos.py/verificar_copia.py,
-# que hacen lo mismo a mano via sys.path.insert) puedan seguir haciendo
-# 'import config', 'from db import DatabaseGateway', etc. sin cambios.
-# Mismo patron que 02_ventas/pyproject.toml.
+# "src layout": el codigo vive en src/correos/, una carpeta por capa
+# (comun/, ingesta/, bronze/, silver/, gold/); solo main.py queda en la raiz.
+# Se agrega src/correos al pythonpath para que los tests (y main.py, que hace
+# lo mismo a mano via sys.path.insert) importen 'from comun.db import ...',
+# 'from bronze.cargar import ...', etc.
 pythonpath = ["src/correos"]

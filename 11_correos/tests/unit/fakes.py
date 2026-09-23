@@ -1,5 +1,5 @@
 """Dobles de prueba (fakes) para SharePointClient y DatabaseGateway. Permiten
-testear copiar_correos()/cargar_correos() sin una conexion Graph/SQL Server
+testear ingesta/bronze/silver/gold sin una conexion Graph/SQL Server
 real, registrando las llamadas para poder aseverar el orden/contenido --
 mismo patron ya usado en 04_usuarios/tests/unit/fakes.py y
 30_parque/tests/unit/fakes.py. No heredan de las clases concretas: Python no
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from exceptions import SharePointResolutionError, SharePointUploadError
+from comun.exceptions import SharePointResolutionError, SharePointUploadError
 
 
 class FakeSharePointClient:
@@ -57,7 +57,7 @@ class FakeDatabaseGateway:
         self.selects: list[tuple[str, tuple]] = []
         self.resultado_select = pd.DataFrame()
         # Si se cargan, cada SELECT consume el siguiente en orden (para flujos
-        # con varias lecturas distintas, ej. gold.py); si no, resultado_select.
+        # con varias lecturas distintas, ej. gold/cargar.py); si no, resultado_select.
         self.resultados_select: list[pd.DataFrame] = []
 
     def fetch_dataframe(self, sql: str, params: tuple | None = None) -> pd.DataFrame:
