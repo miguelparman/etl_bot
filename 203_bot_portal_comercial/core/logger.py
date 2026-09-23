@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-def configurar_logger(log_dir: Path, nombre: str = "bot_dimensionado") -> logging.Logger:
+def configurar_logger(log_dir: Path, nombre: str = "bot_portal_comercial") -> logging.Logger:
     log_dir.mkdir(parents=True, exist_ok=True)
 
     logging.basicConfig(
