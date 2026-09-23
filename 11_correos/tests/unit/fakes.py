@@ -54,6 +54,17 @@ class FakeDatabaseGateway:
         self.truncated_tables: list[str] = []
         self.inserted: dict[str, pd.DataFrame] = {}
         self.filas_a_eliminar = 0
+        self.selects: list[tuple[str, tuple]] = []
+        self.resultado_select = pd.DataFrame()
+        # Si se cargan, cada SELECT consume el siguiente en orden (para flujos
+        # con varias lecturas distintas, ej. gold.py); si no, resultado_select.
+        self.resultados_select: list[pd.DataFrame] = []
+
+    def fetch_dataframe(self, sql: str, params: tuple | None = None) -> pd.DataFrame:
+        self.selects.append((sql, tuple(params) if params else ()))
+        if self.resultados_select:
+            return self.resultados_select.pop(0).copy()
+        return self.resultado_select.copy()
 
     def execute_script_rowcount(self, sql: str, params: tuple | None = None) -> int:
         self.deletes.append((sql, tuple(params) if params else ()))

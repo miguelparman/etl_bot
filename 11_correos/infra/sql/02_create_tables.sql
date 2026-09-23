@@ -30,7 +30,8 @@ BEGIN
         TieneRespuesta                    BIT            NULL,
         Tiempo_Primera_Respuesta_Horas    FLOAT          NULL,
         Estado                            NVARCHAR(50)   NULL,  -- siempre NULL en los datos vistos hasta ahora; se deja como texto por flexibilidad
-        Tiempo_Respuesta_Horas            FLOAT          NULL
+        Tiempo_Respuesta_Horas            FLOAT          NULL,
+        ORIGEN                            NVARCHAR(400)  NULL   -- nombre del .xlsx de '14 CORREOS' del que proviene la fila (400 = limite de SharePoint)
     );
 
     -- Soporta el DELETE/INSERT por rango de FechaHora_UTC_Texto (ver cargar_correos.cargar()).
@@ -47,13 +48,30 @@ IF OBJECT_ID('dbo.TBL_CORREO_REGISTRO', 'U') IS NOT NULL
     ALTER TABLE dbo.TBL_CORREO_REGISTRO ALTER COLUMN Contacto NVARCHAR(MAX) NULL;
 GO
 
+-- Migracion: agrega 'ORIGEN' (nombre del .xlsx de origen de cada fila) a una
+-- tabla creada antes de que existiera. Las filas ya cargadas quedan en NULL
+-- hasta que se recargue su periodo.
+IF OBJECT_ID('dbo.TBL_CORREO_REGISTRO', 'U') IS NOT NULL
+   AND COL_LENGTH('dbo.TBL_CORREO_REGISTRO', 'ORIGEN') IS NULL
+    ALTER TABLE dbo.TBL_CORREO_REGISTRO ADD ORIGEN NVARCHAR(400) NULL;
+GO
+
 IF OBJECT_ID('dbo.TBL_CORREO_BANDEJAS', 'U') IS NULL
 BEGIN
     CREATE TABLE dbo.TBL_CORREO_BANDEJAS (
         Correo_Bandeja           NVARCHAR(255)  NULL,
         Asesor                    NVARCHAR(200)  NULL,
         UltimaRevisionEntrada     DATETIME2(7)   NULL,
-        UltimaRevisionSalida      DATETIME2(7)   NULL
+        UltimaRevisionSalida      DATETIME2(7)   NULL,
+        ORIGEN                    NVARCHAR(400)  NULL   -- nombre del .xlsx de '14 CORREOS' del que proviene la fila
     );
 END
+GO
+
+-- Migracion: agrega 'ORIGEN' a una tabla creada antes de que existiera. Como
+-- TBL_CORREO_BANDEJAS se reemplaza completa en cada carga, queda poblada en
+-- la siguiente corrida.
+IF OBJECT_ID('dbo.TBL_CORREO_BANDEJAS', 'U') IS NOT NULL
+   AND COL_LENGTH('dbo.TBL_CORREO_BANDEJAS', 'ORIGEN') IS NULL
+    ALTER TABLE dbo.TBL_CORREO_BANDEJAS ADD ORIGEN NVARCHAR(400) NULL;
 GO

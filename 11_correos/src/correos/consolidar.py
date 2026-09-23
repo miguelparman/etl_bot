@@ -20,6 +20,7 @@ from mappings import (
     COLUMNA_CLAVE_BANDEJAS,
     COLUMNA_CLAVE_REGISTRO,
     COLUMNA_DEDUP_REGISTRO,
+    COLUMNA_ORIGEN,
     COLUMNAS_BANDEJAS,
     COLUMNAS_REGISTRO,
 )
@@ -55,22 +56,35 @@ def _leer_hoja(
 
 def consolidar(archivos: dict[str, bytes]) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Consolida 'Registro' y 'Bandejas' de todos los archivos, de forma
-    independiente (nunca se mezclan). Aplica una deduplicacion defensiva por
-    'ID_Mensaje' sobre 'Registro' antes de devolverlo."""
+    independiente (nunca se mezclan). A cada fila de ambas hojas se le agrega
+    'ORIGEN' con el nombre del .xlsx del que proviene. Aplica una
+    deduplicacion defensiva por 'ID_Mensaje' sobre 'Registro' antes de
+    devolverlo (ante un duplicado se conserva la fila, y su 'ORIGEN', del
+    primer archivo)."""
     registros: list[pd.DataFrame] = []
     bandejas: list[pd.DataFrame] = []
 
     for nombre, contenido in archivos.items():
         registro_df = _leer_hoja(contenido, nombre, "Registro", COLUMNAS_REGISTRO, COLUMNA_CLAVE_REGISTRO)
         if registro_df is not None:
+            registro_df[COLUMNA_ORIGEN] = nombre
             registros.append(registro_df)
 
         bandejas_df = _leer_hoja(contenido, nombre, "Bandejas", COLUMNAS_BANDEJAS, COLUMNA_CLAVE_BANDEJAS)
         if bandejas_df is not None:
+            bandejas_df[COLUMNA_ORIGEN] = nombre
             bandejas.append(bandejas_df)
 
-    registro_total = pd.concat(registros, ignore_index=True) if registros else pd.DataFrame(columns=COLUMNAS_REGISTRO)
-    bandejas_total = pd.concat(bandejas, ignore_index=True) if bandejas else pd.DataFrame(columns=COLUMNAS_BANDEJAS)
+    registro_total = (
+        pd.concat(registros, ignore_index=True)
+        if registros
+        else pd.DataFrame(columns=[*COLUMNAS_REGISTRO, COLUMNA_ORIGEN])
+    )
+    bandejas_total = (
+        pd.concat(bandejas, ignore_index=True)
+        if bandejas
+        else pd.DataFrame(columns=[*COLUMNAS_BANDEJAS, COLUMNA_ORIGEN])
+    )
 
     antes = len(registro_total)
     registro_total = registro_total.drop_duplicates(subset=[COLUMNA_DEDUP_REGISTRO], keep="first")

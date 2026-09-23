@@ -7,9 +7,13 @@ Dos procesos encadenados:
    carpeta **`14 CORREOS`** (dentro de `BPOCHIPE`) del sitio SharePoint
    **`ReportingFractalia`**.
 2. Consolida las hojas `Registro`/`Bandejas` de todos esos archivos y las
-   carga en SQL Server, `CL_MOVIL` en `172.17.0.162`.
+   carga en SQL Server, `CL_MOVIL` en `172.17.0.162` (capa **bronze**).
+3. Construye la capa **silver** (`TBL_CORREO_REGISTRO_SILVER`) leyendo
+   bronze y agregando columnas derivadas (ver "Estructura medallion").
+4. Construye la capa **gold** (modelo estrella en el esquema `gold`) desde
+   silver, y valida que cuadre.
 
-**`python main.py` corre ambos pasos, en orden.** Es el único archivo
+**`python main.py` corre los cuatro pasos, en orden.** Es el único archivo
 ejecutable en la raíz del proyecto; el resto del código vive en
 `src/correos/` (ver "Estructura").
 
@@ -42,19 +46,93 @@ sola etapa sin repetir todo el proceso.
 ├── src/correos/
 │   ├── copiar_correos.py            # listar .xlsx del origen, descargar y subir uno por uno
 │   ├── verificar_copia.py            # auditoria posterior: compara columnas de 'Registro'/'Bandejas'
-│   ├── cargar_correos.py              # ejecutable: consolida y carga a SQL Server (CL_MOVIL)
+│   ├── cargar_correos.py              # ejecutable: consolida y carga a SQL Server (CL_MOVIL) -- bronze
+│   ├── cargar_silver.py               # ejecutable: bronze -> silver (por periodo o --completo)
 │   ├── consolidar.py                  # leer/filtrar/validar 'Registro'/'Bandejas', convertir fechas
-│   ├── db.py                          # DatabaseGateway (execute_script_rowcount, truncate_table, bulk_insert)
-│   ├── mappings.py                    # tablas/columnas destino en CL_MOVIL
+│   ├── silver.py                      # reglas ASUNTO_AGRUPADO + carga de TBL_CORREO_REGISTRO_SILVER
+│   ├── cargar_gold.py                 # ejecutable: silver -> gold (por periodo o --completo)
+│   ├── gold.py                        # modelo estrella: dimensiones (MERGE) + FACT_MENSAJE + validacion
+│   ├── db.py                          # DatabaseGateway (fetch_dataframe, execute_script_rowcount, truncate_table, bulk_insert)
+│   ├── mappings.py                    # tablas/columnas destino en CL_MOVIL, reglas de ASUNTO_AGRUPADO
 │   ├── sharepoint_client.py          # SharePointClient: resolve_site/drive/folder, list_excel_files, download_file, upload_file
 │   ├── sharepoint_auth.py            # get_graph_token (OAuth2 client credentials)
 │   ├── config.py                     # .env -> Settings (credenciales SharePoint + SQL Server)
 │   ├── exceptions.py
 │   └── logging_setup.py               # logs/correos_<timestamp>.log, un archivo por corrida
-├── infra/sql/02_create_tables.sql   # DDL provisional de TBL_CORREO_REGISTRO/TBL_CORREO_BANDEJAS
+├── infra/sql/02_create_tables.sql   # DDL provisional de TBL_CORREO_REGISTRO/TBL_CORREO_BANDEJAS (bronze)
+├── infra/sql/03_create_silver.sql   # DDL de TBL_CORREO_REGISTRO_SILVER (silver)
+├── infra/sql/04_create_gold.sql     # DDL del esquema [gold]: DIM_* + FACT_MENSAJE
 ├── pyproject.toml                   # pythonpath = ["src/correos"], para tests e imports
 └── tests/unit/
 ```
+
+## Estructura medallion
+
+| Capa | Tabla (`CL_MOVIL.dbo`) | Contenido |
+|---|---|---|
+| Bronze | `TBL_CORREO_REGISTRO`, `TBL_CORREO_BANDEJAS` | Hojas `Registro`/`Bandejas` tal cual + `ORIGEN` (nombre del `.xlsx`) |
+| Silver | `TBL_CORREO_REGISTRO_SILVER` | Columnas de `TBL_CORREO_REGISTRO` **menos** los cálculos del Excel + `ASUNTO_AGRUPADO` |
+| Gold | esquema `gold`: `FACT_MENSAJE` + `DIM_FECHA`, `DIM_BANDEJA`, `DIM_TIPO`, `DIM_ASUNTO_AGRUPADO` | Modelo estrella (ver abajo) |
+
+`EsPrimeraEntrada`, `TieneRespuesta`, `Tiempo_Primera_Respuesta_Horas`,
+`Tiempo_Respuesta_Horas` y `Estado` **quedan solo en bronze**: los calcula la
+macro del Excel y no son confiables (ej. ~1.110.900 h en 3.832 salidas = el
+tiempo desde la fecha 0 de Excel cuando no encuentra la entrada; primeras
+respuestas negativas; `Estado` siempre vacío).
+
+Silver se construye **leyendo bronze**, nunca los `.xlsx`. Se carga por el
+mismo periodo que bronze (`DELETE` + `INSERT` del rango), o completa con
+`python src/correos/cargar_silver.py --completo` (hay que hacerlo tras
+cambiar las reglas, para recalcular lo ya cargado).
+
+`ASUNTO_AGRUPADO` sale de `Asunto` con estas reglas (`mappings.REGLAS_ASUNTO_AGRUPADO`),
+**en orden**, gana la primera que calza, sin distinguir mayúsculas ni tildes:
+
+1. **REBOTE**: contiene `delivery status notification`, `notificacion de estado de entrega`,
+   `no entregable:` o `undelivered mail returned to sender`. Va primero porque un rebote
+   cita el asunto original (`No entregable: Actualización de correo de contacto…`).
+2. **PRESENTACIÓN**: contiene `actualizacion de correo de contacto` o `presentacion`
+   como **palabra completa** (`representación` o `presentaciones` no cuentan).
+3. **PRUEBA**: contiene `prueba`.
+4. **PROMO**: contiene `promo` (cubre `PROMOSEPTIEMBRE`, `PROMOSETIEMBRE`, `PROMO SEPTIEMBRE`, `PROMOCIONES`…).
+
+Si no calza ninguna, queda `NULL`.
+
+### Gold: modelo estrella
+
+```
+                  gold.DIM_FECHA
+                        │
+gold.DIM_TIPO ── gold.FACT_MENSAJE ── gold.DIM_BANDEJA
+                        │
+             gold.DIM_ASUNTO_AGRUPADO
+```
+
+- **`FACT_MENSAJE`** — 1 fila por mensaje. Claves `FECHA_KEY` (AAAAMMDD,
+  fecha **local** Perú/Bogotá), `BANDEJA_KEY`, `TIPO_KEY`,
+  `ASUNTO_AGRUPADO_KEY`; atributos `ID_MENSAJE`, `CONVERSATION_ID`, `ASUNTO`,
+  `CONTACTO`, `FECHA_HORA_UTC`, `FECHA_HORA_LOCAL`, `HORA_LOCAL`; medida
+  `CANTIDAD` (= 1, para contar).
+- **`DIM_FECHA`** — calendario por años completos (se extiende solo cuando
+  llegan datos de un año nuevo), nombres en español, semana ISO, lunes = 1.
+- **`DIM_BANDEJA`** — bandeja, asesor (1:1), `COORDINADOR` (nombre del
+  `.xlsx` sin `Registro_` ni extensión), `ORIGEN` y última revisión
+  entrada/salida (de `TBL_CORREO_BANDEJAS`). Se sobrescribe sin historial.
+- **`DIM_TIPO`** — Entrada / Salida. **`DIM_ASUNTO_AGRUPADO`** — los grupos
+  de las reglas.
+
+Cada dimensión (salvo `DIM_FECHA`) tiene un miembro de **clave 0 con
+descripción vacía**: un valor `NULL` en silver apunta ahí (p. ej. los asuntos
+sin grupo), así las claves foráneas nunca quedan `NULL`.
+
+Las dimensiones **nunca se truncan** (claves estables); `FACT_MENSAJE` se
+carga por periodo igual que bronze/silver, o completa con
+`python src/correos/cargar_gold.py --completo`. Al final se valida que
+`FACT_MENSAJE` tenga las mismas filas que silver y ninguna sin bandeja/tipo;
+si no cuadra, `main.py`/`cargar_gold.py` terminan con código `1`.
+
+Tras cambiar reglas: `cargar_silver.py --completo` y luego
+`cargar_gold.py --completo`.
 
 ## Configuración
 
@@ -75,8 +153,10 @@ Ambos pares de credenciales ya existen y están probados en
   `mparedes` ya usado contra ese servidor en `02_ventas`/`04_usuarios`
   (bases `CL_USUARIOS`/`CL_DATA`). Probado en vivo (con VPN conectada).
 - `FECHA_INICIO` / `FECHA_FIN`: periodo por defecto de la carga de
-  `TBL_CORREO_REGISTRO` (UTC ISO-8601, sobre `FechaHora_UTC_Texto` --
-  inicio inclusivo, fin exclusivo). Permite correr `cargar_correos.py` sin
+  `TBL_CORREO_REGISTRO` (UTC, sobre `FechaHora_UTC_Texto`). Solo fecha
+  (`FECHA_INICIO=2026-09-01`, `FECHA_FIN=2026-09-30`) = días completos, con
+  `FECHA_FIN` incluido entero; con hora (`2026-09-01T00:00:00`) = inicio
+  inclusivo, fin exclusivo. Permite correr `cargar_correos.py` sin
   argumentos (útil para un schedule automatizado); `--fecha-inicio`/
   `--fecha-fin` en la línea de comandos tienen prioridad sobre `.env` si se
   pasan.

@@ -1,6 +1,6 @@
 """Acceso a SQL Server ('CL_MOVIL', 172.17.0.162): fabrica de conexiones
-(pyodbc) y el gateway usado por cargar_correos.py para eliminar por rango,
-truncar e insertar. Mismo patron ya usado en 02_ventas/src/ventas/db.py y
+(pyodbc) y el gateway usado por cargar_correos.py/silver.py para leer,
+eliminar por rango, truncar e insertar. Mismo patron ya usado en 02_ventas/src/ventas/db.py y
 08_cartera/src/cartera/db.py."""
 
 from __future__ import annotations
@@ -68,6 +68,22 @@ class DatabaseGateway:
         except Exception as exc:
             self._conn.rollback()
             raise CargaError(f"Fallo la ejecucion del script T-SQL: {exc}") from exc
+
+    def fetch_dataframe(self, sql: str, params: Sequence[Any] | None = None) -> pd.DataFrame:
+        """Ejecuta un SELECT y devuelve el resultado como DataFrame (usado por
+        silver.py para leer la capa bronze). Se arma a mano desde el cursor
+        en vez de pd.read_sql, que advierte con conexiones pyodbc crudas."""
+        try:
+            cursor = self._conn.cursor()
+            try:
+                cursor.execute(sql, tuple(params) if params else ())
+                columnas = [d[0] for d in cursor.description]
+                filas = [tuple(fila) for fila in cursor.fetchall()]
+            finally:
+                cursor.close()
+        except Exception as exc:
+            raise CargaError(f"Fallo la lectura T-SQL: {exc}") from exc
+        return pd.DataFrame.from_records(filas, columns=columnas)
 
     def truncate_table(self, table: str, schema: str = "dbo") -> None:
         try:

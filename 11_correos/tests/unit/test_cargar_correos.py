@@ -17,6 +17,19 @@ def test_parse_fecha_utc_sin_offset_queda_naive():
     assert _parse_fecha_utc("2026-09-01T00:00:00") == datetime(2026, 9, 1)
 
 
+def test_parse_fecha_utc_solo_fecha_inicio_es_medianoche():
+    assert _parse_fecha_utc("2026-09-01") == datetime(2026, 9, 1)
+
+
+def test_parse_fecha_utc_solo_fecha_fin_incluye_el_dia_completo():
+    # Fin exclusivo: '2026-09-30' como fin -> 2026-10-01 00:00, asi el 30 entra entero.
+    assert _parse_fecha_utc("2026-09-30", es_fin=True) == datetime(2026, 10, 1)
+
+
+def test_parse_fecha_utc_fin_con_hora_no_se_desplaza():
+    assert _parse_fecha_utc("2026-09-23T00:00:00", es_fin=True) == datetime(2026, 9, 23)
+
+
 def test_parse_fecha_utc_con_offset_se_normaliza_a_utc_naive():
     # -05:00 (Peru/Bogota) equivale a las 05:00 UTC
     assert _parse_fecha_utc("2026-09-01T00:00:00-05:00") == datetime(2026, 9, 1, 5, 0, 0)

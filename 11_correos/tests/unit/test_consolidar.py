@@ -101,6 +101,22 @@ def test_deduplica_por_id_mensaje_entre_archivos():
     assert len(registro_df) == 1
 
 
+def test_registro_y_bandejas_incluyen_origen_con_nombre_de_archivo():
+    contenido_a = _libro([{**_FILA_BASE, "ID_Mensaje": "MSG-A"}], [{"Correo_Bandeja": "A@movistar.cl"}])
+    contenido_b = _libro([{**_FILA_BASE, "ID_Mensaje": "MSG-B"}], [{"Correo_Bandeja": "B@movistar.cl"}])
+
+    registro_df, bandejas_df = consolidar({"Registro_A.xlsx": contenido_a, "Registro_B.xlsx": contenido_b})
+
+    assert registro_df.set_index("ID_Mensaje")["ORIGEN"].to_dict() == {
+        "MSG-A": "Registro_A.xlsx",
+        "MSG-B": "Registro_B.xlsx",
+    }
+    assert bandejas_df.set_index("Correo_Bandeja")["ORIGEN"].to_dict() == {
+        "A@movistar.cl": "Registro_A.xlsx",
+        "B@movistar.cl": "Registro_B.xlsx",
+    }
+
+
 def test_preparar_registro_convierte_fechas_y_descarta_invalidas():
     filas = [
         {**_FILA_BASE, "ID_Mensaje": "MSG-1", "FechaHora_UTC_Texto": "2026-09-17T08:59:36.0000000+00:00"},

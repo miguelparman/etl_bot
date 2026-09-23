@@ -18,7 +18,8 @@ correrlo sin argumentos (p.ej. en un schedule automatizado) -- los
 argumentos de linea de comandos, si se pasan, tienen prioridad sobre '.env'.
 
 El rango es UTC, mismo huso que 'FechaHora_UTC_Texto'. El inicio es
-inclusivo, el fin es exclusivo.
+inclusivo, el fin es exclusivo -- salvo que se de solo la fecha
+(ej. --fecha-fin 2026-09-30), que cuenta como dia completo incluido.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -60,16 +61,29 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--fecha-fin",
         default=None,
-        help="UTC ISO-8601, ej. 2026-09-22T00:00:00 (exclusivo, sobre FechaHora_UTC_Texto). "
+        help="UTC ISO-8601, ej. 2026-09-22T00:00:00 (exclusivo, sobre FechaHora_UTC_Texto), "
+        "o solo fecha, ej. 2026-09-30 (ese dia incluido completo). "
         "Si se omite, se usa FECHA_FIN de '.env'.",
     )
     return parser.parse_args()
 
 
-def _parse_fecha_utc(valor: str) -> datetime:
+def _parse_fecha_utc(valor: str, es_fin: bool = False) -> datetime:
     """Acepta con o sin offset de zona horaria; siempre devuelve un datetime
     naive en UTC (mismo formato que preparar_registro() deja en
-    'FechaHora_UTC_Texto'), para poder compararlos directamente."""
+    'FechaHora_UTC_Texto'), para poder compararlos directamente.
+
+    Tambien acepta solo fecha ('2026-09-30'), como dia COMPLETO: de inicio es
+    00:00 de ese dia; de fin (es_fin=True) es 00:00 del dia siguiente, para
+    que con el fin exclusivo del rango el ultimo dia quede incluido entero."""
+    try:
+        dia = date.fromisoformat(valor)
+    except ValueError:
+        pass
+    else:
+        dt = datetime.combine(dia, time.min)
+        return dt + timedelta(days=1) if es_fin else dt
+
     dt = datetime.fromisoformat(valor)
     if dt.tzinfo is not None:
         dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
@@ -167,7 +181,7 @@ def main() -> int:
         return 1
     try:
         fecha_inicio = _parse_fecha_utc(settings.fecha_inicio)
-        fecha_fin = _parse_fecha_utc(settings.fecha_fin)
+        fecha_fin = _parse_fecha_utc(settings.fecha_fin, es_fin=True)
     except ValueError as exc:
         print(f"Fecha invalida: {exc}", file=sys.stderr)
         return 1

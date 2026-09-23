@@ -4,11 +4,17 @@
    hacia '14 CORREOS' (sitio SharePoint 'ReportingFractalia').
 2. Consolida 'Registro'/'Bandejas' de esos archivos y los carga en SQL
    Server ('CL_MOVIL') -- ver cargar_correos.py. El periodo de carga de
-   TBL_CORREO_REGISTRO se toma de FECHA_INICIO/FECHA_FIN en '.env'.
+   TBL_CORREO_REGISTRO se toma de FECHA_INICIO/FECHA_FIN en '.env'. Es la
+   capa BRONZE.
+3. Construye la capa SILVER (TBL_CORREO_REGISTRO_SILVER) del mismo periodo
+   leyendo bronze y agregando ASUNTO_AGRUPADO -- ver silver.py.
+4. Construye la capa GOLD (modelo estrella en el esquema 'gold') del mismo
+   periodo desde silver, y valida que cuadre -- ver gold.py.
 
-Un fallo en el paso 2 no deshace el paso 1 (los archivos ya copiados a
-SharePoint quedan ahi) -- son operaciones independientes, cada una
-reintentable por su cuenta (main.py de nuevo, o cargar_correos.py solo).
+Un fallo en un paso no deshace los anteriores (los archivos ya copiados a
+SharePoint quedan ahi, bronze/silver quedan cargados) -- son operaciones
+independientes, cada una reintentable por su cuenta (main.py de nuevo, o
+cargar_correos.py / cargar_silver.py / cargar_gold.py solos).
 
 Uso:
     python main.py
@@ -25,10 +31,13 @@ sys.path.insert(0, str(BASE_DIR / "src" / "correos"))
 from cargar_correos import _parse_fecha_utc, ejecutar
 from config import cargar_configuracion, cargar_configuracion_db
 from copiar_correos import copiar_correos
+from db import DatabaseGateway, crear_conexion
 from exceptions import CorreosError
+from gold import cargar_periodo_gold, validar
 from logging_setup import configurar_logging
 from sharepoint_auth import get_graph_token
 from sharepoint_client import SharePointClient
+from silver import cargar_periodo_silver
 
 
 def main() -> int:
@@ -67,7 +76,7 @@ def main() -> int:
         return 1
     try:
         fecha_inicio = _parse_fecha_utc(settings.fecha_inicio)
-        fecha_fin = _parse_fecha_utc(settings.fecha_fin)
+        fecha_fin = _parse_fecha_utc(settings.fecha_fin, es_fin=True)
     except ValueError as exc:
         logger.error("FECHA_INICIO/FECHA_FIN invalida en '.env': %s", exc)
         return 1
@@ -88,7 +97,34 @@ def main() -> int:
         insertadas_registro,
         insertadas_bandejas,
     )
-    return 1 if fallidos_copia else 0
+
+    try:
+        conn = crear_conexion(db_settings)
+        try:
+            gateway = DatabaseGateway(conn, batch_size=db_settings.batch_size)
+            eliminadas_silver, insertadas_silver = cargar_periodo_silver(gateway, fecha_inicio, fecha_fin)
+        finally:
+            conn.close()
+    except CorreosError as exc:
+        logger.error("Fallo la carga de silver (bronze ya quedo cargado): %s", exc)
+        return 1
+
+    logger.info("Silver finalizada: %s eliminadas / %s insertadas (periodo).", eliminadas_silver, insertadas_silver)
+
+    try:
+        conn = crear_conexion(db_settings)
+        try:
+            gateway = DatabaseGateway(conn, batch_size=db_settings.batch_size)
+            eliminadas_gold, insertadas_gold = cargar_periodo_gold(gateway, fecha_inicio, fecha_fin)
+            gold_ok = validar(gateway, (fecha_inicio, fecha_fin))
+        finally:
+            conn.close()
+    except CorreosError as exc:
+        logger.error("Fallo la carga de gold (bronze y silver ya quedaron cargados): %s", exc)
+        return 1
+
+    logger.info("Gold finalizada: %s eliminadas / %s insertadas en FACT_MENSAJE (periodo).", eliminadas_gold, insertadas_gold)
+    return 1 if fallidos_copia or not gold_ok else 0
 
 
 if __name__ == "__main__":
