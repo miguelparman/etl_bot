@@ -1,7 +1,7 @@
 """Capa GOLD de la estructura medallion: modelo estrella en el esquema
 'gold' (DDL en infra/sql/03_gold.sql, T-SQL de carga en sql.py),
-construido desde silver (dbo.TBL_CORREO_REGISTRO_SILVER) y
-dbo.TBL_CORREO_BANDEJAS.
+construido SOLO desde silver (dbo.TBL_CORREO_REGISTRO_SILVER y
+dbo.TBL_CORREO_BANDEJAS_SILVER).
 
 - Dimensiones: nunca se truncan -- se agregan los valores nuevos y, en
   DIM_BANDEJA, se sobrescriben los atributos que cambian (asesor,
@@ -9,7 +9,9 @@ dbo.TBL_CORREO_BANDEJAS.
   y los hechos de otros periodos siguen apuntando bien.
 - FACT_MENSAJE: por periodo (DELETE + INSERT del rango sobre FECHA_HORA_UTC,
   mismo criterio que bronze/silver) o completa (TRUNCATE + INSERT de todo
-  silver).
+  silver). Cada fila lleva columnas de auditoria: TABLA_ORIGEN,
+  PROCESO_CARGA, ID_EJECUCION (enlaza con dbo.TBL_CORREO_LOG_EJECUCION, ver
+  comun/ejecucion.py) y FECHA_CARGA.
 """
 
 from __future__ import annotations
@@ -17,10 +19,13 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime
 
+from comun.ejecucion import Ejecucion
 from comun.logging_setup import NOMBRE_LOGGER
 from gold import sql
 from gold.mappings import (
     ESQUEMA_GOLD,
+    PROCESO_CARGA_COMPLETO,
+    PROCESO_CARGA_PERIODO,
     TABLA_DIM_ASUNTO_AGRUPADO,
     TABLA_DIM_BANDEJA,
     TABLA_DIM_FECHA,
@@ -62,7 +67,15 @@ def actualizar_dimensiones(gateway, periodo: tuple[datetime, datetime] | None) -
     logger.info("%s: %s bandeja(s) insertadas/actualizadas.", TABLA_DIM_BANDEJA, afectadas)
 
 
-def cargar_periodo_gold(gateway, fecha_inicio: datetime, fecha_fin: datetime) -> tuple[int, int]:
+def _params_auditoria(ejecucion: Ejecucion, proceso_carga: str) -> tuple:
+    """Valores de TABLA_ORIGEN, PROCESO_CARGA, ID_EJECUCION y FECHA_CARGA, en
+    el orden que espera sql.insert_fact()."""
+    return (sql.TABLA_ORIGEN_FACT, proceso_carga, ejecucion.id_ejecucion, ejecucion.fecha_carga)
+
+
+def cargar_periodo_gold(
+    gateway, fecha_inicio: datetime, fecha_fin: datetime, ejecucion: Ejecucion
+) -> tuple[int, int]:
     """Dimensiones + FACT_MENSAJE del periodo [fecha_inicio, fecha_fin).
     Devuelve (filas_eliminadas, filas_insertadas) de la tabla de hechos."""
     periodo = (fecha_inicio, fecha_fin)
@@ -70,37 +83,43 @@ def cargar_periodo_gold(gateway, fecha_inicio: datetime, fecha_fin: datetime) ->
 
     eliminadas = gateway.execute_script_rowcount(sql.DELETE_FACT_PERIODO, periodo)
     logger.info("%s fila(s) eliminadas de %s para el periodo.", eliminadas, sql.FACT)
-    insertadas = gateway.execute_script_rowcount(sql.insert_fact(con_periodo=True), periodo)
-    logger.info("%s fila(s) insertadas en %s.", insertadas, sql.FACT)
+    insertadas = gateway.execute_script_rowcount(
+        sql.insert_fact(con_periodo=True), _params_auditoria(ejecucion, PROCESO_CARGA_PERIODO) + periodo
+    )
+    logger.info("%s fila(s) insertadas en %s (ejecucion %s).", insertadas, sql.FACT, ejecucion.id_ejecucion)
     return eliminadas, insertadas
 
 
-def recargar_gold_completo(gateway) -> int:
+def recargar_gold_completo(gateway, ejecucion: Ejecucion) -> int:
     """Dimensiones + FACT_MENSAJE completa desde todo silver (carga inicial,
     o tras reconstruir silver). Las dimensiones NO se truncan."""
     actualizar_dimensiones(gateway, None)
 
     gateway.truncate_table(TABLA_FACT_MENSAJE, schema=ESQUEMA_GOLD)
-    insertadas = gateway.execute_script_rowcount(sql.insert_fact(con_periodo=False))
-    logger.info("%s fila(s) insertadas en %s (completo).", insertadas, sql.FACT)
+    insertadas = gateway.execute_script_rowcount(
+        sql.insert_fact(con_periodo=False), _params_auditoria(ejecucion, PROCESO_CARGA_COMPLETO)
+    )
+    logger.info("%s fila(s) insertadas en %s (completo, ejecucion %s).", insertadas, sql.FACT, ejecucion.id_ejecucion)
     return insertadas
 
 
 def validar(gateway, periodo: tuple[datetime, datetime] | None) -> bool:
     """Chequeo posterior a la carga: la tabla de hechos debe tener las mismas
-    filas que silver (en el periodo, o en total si 'periodo' es None) y
-    ninguna sin bandeja/tipo (clave 0). Registra el resultado; devuelve True
-    si todo cuadra."""
-    params = tuple(periodo) * 3 if periodo is not None else None
+    filas que silver (en el periodo, o en total si 'periodo' es None),
+    ninguna sin bandeja/tipo (clave 0) y ninguna sin sus columnas de
+    auditoria. Registra el resultado; devuelve True si todo cuadra."""
+    params = tuple(periodo) * 4 if periodo is not None else None
     fila = gateway.fetch_dataframe(sql.validar(con_periodo=periodo is not None), params).iloc[0]
-    silver, fact, sin_clave = int(fila["FILAS_SILVER"]), int(fila["FILAS_FACT"]), int(fila["FILAS_SIN_BANDEJA_O_TIPO"])
-    ok = silver == fact and sin_clave == 0
+    silver, fact = int(fila["FILAS_SILVER"]), int(fila["FILAS_FACT"])
+    sin_clave, sin_auditoria = int(fila["FILAS_SIN_BANDEJA_O_TIPO"]), int(fila["FILAS_SIN_AUDITORIA"])
+    ok = silver == fact and sin_clave == 0 and sin_auditoria == 0
     registrar = logger.info if ok else logger.error
     registrar(
-        "Validacion gold: silver=%s / fact=%s fila(s); %s sin bandeja o tipo -> %s.",
+        "Validacion gold: silver=%s / fact=%s fila(s); %s sin bandeja o tipo; %s sin auditoria -> %s.",
         silver,
         fact,
         sin_clave,
+        sin_auditoria,
         "OK" if ok else "NO CUADRA",
     )
     return ok

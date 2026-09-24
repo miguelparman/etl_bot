@@ -1,11 +1,12 @@
 """Sentencias T-SQL de la capa GOLD (las ejecuta cargar.py). Todo corre en el
 servidor: los cruces con las dimensiones son set-based y no hace falta
-traer las filas a Python. DDL de las tablas: infra/sql/03_gold.sql."""
+traer las filas a Python. DDL de las tablas: infra/sql/03_gold.sql.
+
+Gold lee SOLO de silver (TBL_CORREO_REGISTRO_SILVER y
+TBL_CORREO_BANDEJAS_SILVER), nunca de bronze."""
 
 from __future__ import annotations
 
-from bronze.mappings import COLUMNA_CONTROL_FECHA, TABLA_BANDEJAS
-from bronze.mappings import ESQUEMA as ESQUEMA_BRONZE
 from gold.mappings import (
     DESFASE_HORAS_LOCAL,
     ESQUEMA_GOLD,
@@ -15,11 +16,13 @@ from gold.mappings import (
     TABLA_DIM_TIPO,
     TABLA_FACT_MENSAJE,
 )
+from silver.mappings import COLUMNA_CONTROL_FECHA, TABLA_BANDEJAS_SILVER, TABLA_REGISTRO_SILVER
 from silver.mappings import ESQUEMA as ESQUEMA_SILVER
-from silver.mappings import TABLA_REGISTRO_SILVER
 
 SILVER = f"[{ESQUEMA_SILVER}].[{TABLA_REGISTRO_SILVER}]"
-BANDEJAS = f"[{ESQUEMA_BRONZE}].[{TABLA_BANDEJAS}]"
+# Valor de FACT_MENSAJE.TABLA_ORIGEN: la tabla silver de la que sale cada fila.
+TABLA_ORIGEN_FACT = f"{ESQUEMA_SILVER}.{TABLA_REGISTRO_SILVER}"
+BANDEJAS = f"[{ESQUEMA_SILVER}].[{TABLA_BANDEJAS_SILVER}]"
 FACT = f"[{ESQUEMA_GOLD}].[{TABLA_FACT_MENSAJE}]"
 DIM_FECHA = f"[{ESQUEMA_GOLD}].[{TABLA_DIM_FECHA}]"
 DIM_BANDEJA = f"[{ESQUEMA_GOLD}].[{TABLA_DIM_BANDEJA}]"
@@ -98,20 +101,20 @@ WHERE g.GRUPO <> N'' AND NOT EXISTS (SELECT 1 FROM {DIM_ASUNTO} d WHERE d.ASUNTO
 """
 
 
-# Origen de DIM_BANDEJA: TBL_CORREO_BANDEJAS (estado actual, preferido) +
-# bandejas que solo aparecen en silver (su asesor/origen del mensaje mas
-# reciente). ROW_NUMBER defensivo: el MERGE falla si una bandeja llega dos
-# veces. COORDINADOR = ORIGEN sin 'Registro_' ni extension, '_' -> ' '.
+# Origen de DIM_BANDEJA: TBL_CORREO_BANDEJAS_SILVER (estado actual,
+# preferido) + bandejas que solo aparecen en los mensajes (su asesor/origen
+# del mensaje mas reciente). ROW_NUMBER defensivo: el MERGE falla si una
+# bandeja llega dos veces. COORDINADOR ya viene calculado desde silver.
 MERGE_DIM_BANDEJA = f"""
 WITH desde_bandejas AS (
-    SELECT b.Correo_Bandeja AS BANDEJA, b.Asesor AS ASESOR, b.ORIGEN,
+    SELECT b.Correo_Bandeja AS BANDEJA, b.Asesor AS ASESOR, b.COORDINADOR, b.ORIGEN,
            b.UltimaRevisionEntrada AS ENTRADA, b.UltimaRevisionSalida AS SALIDA,
            ROW_NUMBER() OVER (PARTITION BY b.Correo_Bandeja ORDER BY b.UltimaRevisionEntrada DESC, b.ORIGEN) AS RN
     FROM {BANDEJAS} b
     WHERE b.Correo_Bandeja IS NOT NULL AND b.Correo_Bandeja <> N''
 ),
-desde_silver AS (
-    SELECT s.[Bandeja] AS BANDEJA, s.[Asesor] AS ASESOR, s.[ORIGEN],
+desde_mensajes AS (
+    SELECT s.[Bandeja] AS BANDEJA, s.[Asesor] AS ASESOR, s.[COORDINADOR], s.[ORIGEN],
            CAST(NULL AS DATETIME2) AS ENTRADA, CAST(NULL AS DATETIME2) AS SALIDA,
            ROW_NUMBER() OVER (PARTITION BY s.[Bandeja] ORDER BY s.[{COLUMNA_CONTROL_FECHA}] DESC) AS RN
     FROM {SILVER} s
@@ -119,14 +122,9 @@ desde_silver AS (
       AND NOT EXISTS (SELECT 1 FROM {BANDEJAS} b WHERE b.Correo_Bandeja = s.[Bandeja])
 ),
 origen AS (
-    SELECT o.BANDEJA, o.ASESOR, o.ORIGEN, o.ENTRADA, o.SALIDA,
-           NULLIF(REPLACE(
-               CASE WHEN CHARINDEX('.', p.SIN_PREFIJO) > 0
-                    THEN LEFT(p.SIN_PREFIJO, LEN(p.SIN_PREFIJO) - CHARINDEX('.', REVERSE(p.SIN_PREFIJO)))
-                    ELSE p.SIN_PREFIJO END,
-               '_', ' '), N'') AS COORDINADOR
-    FROM (SELECT * FROM desde_bandejas WHERE RN = 1 UNION ALL SELECT * FROM desde_silver WHERE RN = 1) o
-    CROSS APPLY (SELECT CASE WHEN o.ORIGEN LIKE 'Registro[_]%' THEN STUFF(o.ORIGEN, 1, 9, N'') ELSE o.ORIGEN END AS SIN_PREFIJO) p
+    SELECT * FROM desde_bandejas WHERE RN = 1
+    UNION ALL
+    SELECT * FROM desde_mensajes WHERE RN = 1
 )
 MERGE {DIM_BANDEJA} AS d
 USING origen AS o ON d.BANDEJA = o.BANDEJA
@@ -144,11 +142,16 @@ WHEN NOT MATCHED BY TARGET THEN INSERT
 
 def insert_fact(con_periodo: bool) -> str:
     """Silver -> FACT_MENSAJE. LEFT JOIN + ISNULL(..., 0): un valor NULL (o
-    sin match) apunta al miembro vacio de clave 0 en vez de perder la fila."""
+    sin match) apunta al miembro vacio de clave 0 en vez de perder la fila.
+
+    Parametros, en orden: TABLA_ORIGEN, PROCESO_CARGA, ID_EJECUCION,
+    FECHA_CARGA (columnas de auditoria, ver cargar._params_auditoria) y, si
+    con_periodo, inicio y fin del periodo."""
     sql = f"""
 INSERT INTO {FACT}
     (FECHA_KEY, HORA_LOCAL, BANDEJA_KEY, TIPO_KEY, ASUNTO_AGRUPADO_KEY,
-     ID_MENSAJE, CONVERSATION_ID, ASUNTO, CONTACTO, FECHA_HORA_UTC, FECHA_HORA_LOCAL, CANTIDAD)
+     ID_MENSAJE, CONVERSATION_ID, ASUNTO, CONTACTO, FECHA_HORA_UTC, FECHA_HORA_LOCAL, CANTIDAD,
+     TABLA_ORIGEN, PROCESO_CARGA, ID_EJECUCION, FECHA_CARGA)
 SELECT
     CONVERT(INT, CONVERT(CHAR(8), CAST(l.FECHA_HORA_LOCAL AS DATE), 112)),
     DATEPART(HOUR, l.FECHA_HORA_LOCAL),
@@ -156,7 +159,8 @@ SELECT
     ISNULL(t.TIPO_KEY, 0),
     ISNULL(a.ASUNTO_AGRUPADO_KEY, 0),
     s.[ID_Mensaje], s.[ConversationID], s.[Asunto], s.[Contacto],
-    s.[{COLUMNA_CONTROL_FECHA}], l.FECHA_HORA_LOCAL, 1
+    s.[{COLUMNA_CONTROL_FECHA}], l.FECHA_HORA_LOCAL, 1,
+    ?, ?, ?, ?
 FROM {SILVER} s
 CROSS APPLY (SELECT {_FECHA_HORA_LOCAL} AS FECHA_HORA_LOCAL) l
 LEFT JOIN {DIM_BANDEJA} b ON b.BANDEJA = s.[Bandeja]
@@ -178,5 +182,8 @@ def validar(con_periodo: bool) -> str:
 SELECT
     (SELECT COUNT(*) FROM {SILVER} s{where_silver}) AS FILAS_SILVER,
     (SELECT COUNT(*) FROM {FACT}{where_fact}) AS FILAS_FACT,
-    (SELECT COUNT(*) FROM {FACT}{where_fact} AND (BANDEJA_KEY = 0 OR TIPO_KEY = 0)) AS FILAS_SIN_BANDEJA_O_TIPO
+    (SELECT COUNT(*) FROM {FACT}{where_fact} AND (BANDEJA_KEY = 0 OR TIPO_KEY = 0)) AS FILAS_SIN_BANDEJA_O_TIPO,
+    (SELECT COUNT(*) FROM {FACT}{where_fact}
+        AND (TABLA_ORIGEN IS NULL OR PROCESO_CARGA IS NULL OR ID_EJECUCION IS NULL OR FECHA_CARGA IS NULL)
+    ) AS FILAS_SIN_AUDITORIA
 """

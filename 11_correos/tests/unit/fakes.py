@@ -59,6 +59,14 @@ class FakeDatabaseGateway:
         # Si se cargan, cada SELECT consume el siguiente en orden (para flujos
         # con varias lecturas distintas, ej. gold/cargar.py); si no, resultado_select.
         self.resultados_select: list[pd.DataFrame] = []
+        self.inserts_con_id: list[tuple[str, tuple]] = []
+        self.siguiente_id = 1
+        # Si se carga, execute_script_rowcount levanta esta excepcion.
+        self.fallar_execute: Exception | None = None
+
+    def insert_returning_id(self, sql: str, params: tuple | None = None) -> int:
+        self.inserts_con_id.append((sql, tuple(params) if params else ()))
+        return self.siguiente_id
 
     def fetch_dataframe(self, sql: str, params: tuple | None = None) -> pd.DataFrame:
         self.selects.append((sql, tuple(params) if params else ()))
@@ -67,6 +75,8 @@ class FakeDatabaseGateway:
         return self.resultado_select.copy()
 
     def execute_script_rowcount(self, sql: str, params: tuple | None = None) -> int:
+        if self.fallar_execute is not None:
+            raise self.fallar_execute
         self.deletes.append((sql, tuple(params) if params else ()))
         return self.filas_a_eliminar
 

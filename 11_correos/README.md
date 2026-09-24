@@ -8,10 +8,11 @@ Proceso en cuatro etapas (estructura **medallion**), todas desde `main.py`:
    SharePoint **`ReportingFractalia`**.
 2. **bronze** — consolida las hojas `Registro`/`Bandejas` de todos esos
    archivos y las carga tal cual en SQL Server, `CL_MOVIL` en `172.17.0.162`.
-3. **silver** — construye `TBL_CORREO_REGISTRO_SILVER` leyendo bronze:
-   limpia y agrega columnas derivadas (ver "Estructura medallion").
-4. **gold** — construye el modelo estrella en el esquema `gold` desde
-   silver, y valida que cuadre.
+3. **silver** — construye `TBL_CORREO_REGISTRO_SILVER` y
+   `TBL_CORREO_BANDEJAS_SILVER` leyendo bronze: limpia y agrega columnas
+   derivadas (ver "Estructura medallion").
+4. **gold** — construye el modelo estrella en el esquema `gold` leyendo
+   **solo** silver, y valida que cuadre.
 
 **`python main.py` corre las cuatro etapas, en orden** (ver "Uso" para
 correr solo una o reintentar desde una). Es el único ejecutable; el resto
@@ -45,7 +46,8 @@ sus tablas y columnas.
 │   ├── comun/                     # lo que usan todas las capas
 │   │   ├── config.py              # .env -> Settings (credenciales SharePoint + SQL Server, periodo)
 │   │   ├── db.py                  # DatabaseGateway (fetch_dataframe, execute_script_rowcount, truncate_table, bulk_insert)
-│   │   ├── periodo.py             # FECHA_INICIO/FECHA_FIN -> [inicio, fin) en UTC + validación
+│   │   ├── periodo.py             # FECHA_INICIO/FECHA_FIN -> [inicio, fin) en UTC + validación; ahora_local()
+│   │   ├── ejecucion.py           # log de ejecuciones: iniciar_ejecucion() / finalizar_ejecucion()
 │   │   ├── sharepoint_client.py   # SharePointClient + conectar_destino()
 │   │   ├── sharepoint_auth.py     # get_graph_token (OAuth2 client credentials)
 │   │   ├── exceptions.py
@@ -57,17 +59,18 @@ sus tablas y columnas.
 │   │   ├── mappings.py            # columnas de las hojas, tablas TBL_CORREO_*
 │   │   ├── consolidar.py          # leer/filtrar/validar 'Registro'/'Bandejas', convertir fechas
 │   │   └── cargar.py              # descarga + consolida + carga por periodo
-│   ├── silver/                    # bronze -> dbo.TBL_CORREO_REGISTRO_SILVER
+│   ├── silver/                    # bronze -> dbo.TBL_CORREO_REGISTRO_SILVER / TBL_CORREO_BANDEJAS_SILVER
 │   │   ├── mappings.py            # columnas excluidas + reglas de ASUNTO_AGRUPADO
-│   │   └── cargar.py              # agrupar_asunto() + carga por periodo / completa
+│   │   └── cargar.py              # agrupar_asunto(), coordinador_desde_origen() + cargas
 │   └── gold/                      # silver -> esquema [gold]
 │       ├── mappings.py            # esquema y tablas DIM_* / FACT_*
 │       ├── sql.py                 # T-SQL de dimensiones, hechos y validación
 │       └── cargar.py              # dimensiones -> hechos -> validación
 ├── infra/sql/
 │   ├── 01_bronze.sql              # DDL de TBL_CORREO_REGISTRO / TBL_CORREO_BANDEJAS
-│   ├── 02_silver.sql              # DDL de TBL_CORREO_REGISTRO_SILVER
-│   └── 03_gold.sql                # DDL del esquema [gold]: DIM_* + FACT_MENSAJE
+│   ├── 02_silver.sql              # DDL de TBL_CORREO_REGISTRO_SILVER / TBL_CORREO_BANDEJAS_SILVER
+│   ├── 03_gold.sql                # DDL del esquema [gold]: DIM_* + FACT_MENSAJE
+│   └── 04_log_ejecucion.sql       # DDL de dbo.TBL_CORREO_LOG_EJECUCION + FK desde FACT_MENSAJE
 ├── pyproject.toml                 # pythonpath = ["src/correos"], para tests e imports
 └── tests/unit/                    # misma organización: comun/, ingesta/, bronze/, silver/, gold/ + test_main.py
 ```
@@ -77,8 +80,9 @@ sus tablas y columnas.
 | Capa | Tabla (`CL_MOVIL`) | Contenido |
 |---|---|---|
 | Bronze | `dbo.TBL_CORREO_REGISTRO`, `dbo.TBL_CORREO_BANDEJAS` | Hojas `Registro`/`Bandejas` tal cual + `ORIGEN` (nombre del `.xlsx`) |
-| Silver | `dbo.TBL_CORREO_REGISTRO_SILVER` | Columnas de `TBL_CORREO_REGISTRO` **menos** los cálculos del Excel + `ASUNTO_AGRUPADO` |
-| Gold | esquema `gold`: `FACT_MENSAJE` + `DIM_FECHA`, `DIM_BANDEJA`, `DIM_TIPO`, `DIM_ASUNTO_AGRUPADO` | Modelo estrella (ver abajo) |
+| Silver | `dbo.TBL_CORREO_REGISTRO_SILVER` | Columnas de `TBL_CORREO_REGISTRO` **menos** los cálculos del Excel + `ASUNTO_AGRUPADO` + `COORDINADOR` |
+| Silver | `dbo.TBL_CORREO_BANDEJAS_SILVER` | `TBL_CORREO_BANDEJAS` + `COORDINADOR` |
+| Gold | esquema `gold`: `FACT_MENSAJE` + `DIM_FECHA`, `DIM_BANDEJA`, `DIM_TIPO`, `DIM_ASUNTO_AGRUPADO` | Modelo estrella (ver abajo), construido **solo** desde silver |
 
 ### Bronze
 
@@ -127,6 +131,14 @@ primera que calza, sin distinguir mayúsculas ni tildes:
 
 Si no calza ninguna, queda `NULL`.
 
+`COORDINADOR` sale de `ORIGEN` (cada `.xlsx` es el control de un
+coordinador): sin el prefijo `Registro_`, sin extensión y con `_` → espacio
+(`Registro_JHON_MORALES_PENA.xlsx` → `JHON MORALES PENA`).
+
+`TBL_CORREO_BANDEJAS_SILVER` se reemplaza **completa** en cada corrida de
+silver (con o sin `--completo`), igual que `TBL_CORREO_BANDEJAS` en bronze:
+es el estado actual de cada bandeja, no tiene periodo.
+
 ### Gold: modelo estrella
 
 ```
@@ -141,12 +153,19 @@ gold.DIM_TIPO ── gold.FACT_MENSAJE ── gold.DIM_BANDEJA
   fecha **local** Perú/Bogotá), `BANDEJA_KEY`, `TIPO_KEY`,
   `ASUNTO_AGRUPADO_KEY`; atributos `ID_MENSAJE`, `CONVERSATION_ID`, `ASUNTO`,
   `CONTACTO`, `FECHA_HORA_UTC`, `FECHA_HORA_LOCAL`, `HORA_LOCAL`; medida
-  `CANTIDAD` (= 1, para contar).
+  `CANTIDAD` (= 1, para contar). Columnas de **auditoría**:
+  - `TABLA_ORIGEN` — tabla silver de la que sale la fila (`dbo.TBL_CORREO_REGISTRO_SILVER`).
+  - `PROCESO_CARGA` — archivo y función que la insertó
+    (`…/gold/cargar.py:cargar_periodo_gold` o `…:recargar_gold_completo`).
+  - `ID_EJECUCION` — la corrida de `main.py` que la insertó; FK a
+    `dbo.TBL_CORREO_LOG_EJECUCION` (ver "Log de ejecuciones").
+  - `FECHA_CARGA` — inicio de esa corrida, hora **local** Perú/Bogotá (mismo
+    valor para todas las filas de una carga).
 - **`DIM_FECHA`** — calendario por años completos (se extiende solo cuando
   llegan datos de un año nuevo), nombres en español, semana ISO, lunes = 1.
-- **`DIM_BANDEJA`** — bandeja, asesor (1:1), `COORDINADOR` (nombre del
-  `.xlsx` sin `Registro_` ni extensión), `ORIGEN` y última revisión
-  entrada/salida (de `TBL_CORREO_BANDEJAS`). Se sobrescribe sin historial.
+- **`DIM_BANDEJA`** — bandeja, asesor (1:1), `COORDINADOR` (ya calculado
+  en silver), `ORIGEN` y última revisión entrada/salida, desde
+  `TBL_CORREO_BANDEJAS_SILVER`. Se sobrescribe sin historial.
 - **`DIM_TIPO`** — Entrada / Salida. **`DIM_ASUNTO_AGRUPADO`** — los grupos
   de las reglas.
 
@@ -162,6 +181,31 @@ si no cuadra, `main.py` termina con código `1`.
 
 Tras cambiar reglas: `python main.py --desde silver --completo` (reconstruye
 silver y luego gold).
+
+### Log de ejecuciones
+
+`dbo.TBL_CORREO_LOG_EJECUCION` (DDL en `infra/sql/04_log_ejecucion.sql`,
+código en `comun/ejecucion.py`): **1 fila por corrida** de `main.py` (salvo
+`--verificar-copia`). Se abre al empezar con `ESTADO = 'EN_CURSO'` y se
+cierra al terminar con `OK` o `ERROR`, más `FILAS_BRONZE`/`FILAS_SILVER`/
+`FILAS_GOLD` (filas insertadas por etapa; `NULL` si la etapa no corrió),
+`VALIDACION_GOLD`, `MENSAJE_ERROR`, `ETAPAS`, `MODO`, el periodo (UTC),
+`USUARIO` y `EQUIPO`. Fechas de inicio/fin en hora local Perú/Bogotá.
+
+Queda `ERROR` si una etapa falla (con el mensaje), si algún archivo no se
+copió o si la validación de gold no cuadra. Para ver qué corrida cargó cada
+mensaje:
+
+```sql
+SELECT l.ID_EJECUCION, l.FECHA_INICIO, l.ESTADO, l.ETAPAS, l.MODO, COUNT(f.MENSAJE_KEY) AS MENSAJES
+FROM dbo.TBL_CORREO_LOG_EJECUCION l
+LEFT JOIN gold.FACT_MENSAJE f ON f.ID_EJECUCION = l.ID_EJECUCION
+GROUP BY l.ID_EJECUCION, l.FECHA_INICIO, l.ESTADO, l.ETAPAS, l.MODO
+ORDER BY l.ID_EJECUCION DESC;
+```
+
+Como `main.py` registra toda corrida, ahora necesita conexión a SQL Server
+desde el inicio, incluso con `--solo ingesta`.
 
 ## Configuración
 
@@ -199,6 +243,7 @@ conectada) corriendo una vez, en orden:
 sqlcmd -S 172.17.0.162 -d CL_MOVIL -i infra/sql/01_bronze.sql
 sqlcmd -S 172.17.0.162 -d CL_MOVIL -i infra/sql/02_silver.sql
 sqlcmd -S 172.17.0.162 -d CL_MOVIL -i infra/sql/03_gold.sql
+sqlcmd -S 172.17.0.162 -d CL_MOVIL -i infra/sql/04_log_ejecucion.sql
 ```
 
 Usan `IF OBJECT_ID(...) IS NULL` (nunca `DROP`), así que correrlos de nuevo

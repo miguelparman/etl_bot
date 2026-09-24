@@ -1,6 +1,7 @@
 -- Capa SILVER de la estructura medallion (ver src/correos/silver/cargar.py):
--- mismas columnas que la capa bronze TBL_CORREO_REGISTRO (ver
--- 01_bronze.sql) + columnas derivadas. La llena main.py (etapa silver) leyendo bronze, nunca los .xlsx directamente.
+-- las tablas de bronze (ver 01_bronze.sql) limpias + columnas derivadas. La
+-- llena main.py (etapa silver) leyendo bronze, nunca los .xlsx directamente.
+-- Gold lee SOLO de estas tablas.
 --
 -- Usa IF OBJECT_ID(...) IS NULL (nunca DROP): 172.17.0.162 es el servidor
 -- real -- volver a correrlo no toca la tabla ni sus datos.
@@ -21,7 +22,8 @@ BEGIN
         ConversationID                    NVARCHAR(200)  NULL,
         Asesor                            NVARCHAR(200)  NULL,
         ORIGEN                            NVARCHAR(400)  NULL,
-        ASUNTO_AGRUPADO                   NVARCHAR(50)   NULL   -- REBOTE / PRESENTACIÓN / PRUEBA / PROMO; NULL si ninguna regla calza (ver silver/mappings.REGLAS_ASUNTO_AGRUPADO)
+        ASUNTO_AGRUPADO                   NVARCHAR(50)   NULL,  -- REBOTE / PRESENTACIÓN / PRUEBA / PROMO; NULL si ninguna regla calza (ver silver/mappings.REGLAS_ASUNTO_AGRUPADO)
+        COORDINADOR                       NVARCHAR(400)  NULL   -- ORIGEN sin 'Registro_' ni extension, '_' -> ' ' (ver silver/cargar.coordinador_desde_origen)
     );
 
     CREATE INDEX IX_TBL_CORREO_REGISTRO_SILVER_FechaHoraUTC ON dbo.TBL_CORREO_REGISTRO_SILVER (FechaHora_UTC_Texto);
@@ -42,4 +44,25 @@ IF COL_LENGTH('dbo.TBL_CORREO_REGISTRO_SILVER', 'Estado') IS NOT NULL
     ALTER TABLE dbo.TBL_CORREO_REGISTRO_SILVER DROP COLUMN Estado;
 IF COL_LENGTH('dbo.TBL_CORREO_REGISTRO_SILVER', 'Tiempo_Respuesta_Horas') IS NOT NULL
     ALTER TABLE dbo.TBL_CORREO_REGISTRO_SILVER DROP COLUMN Tiempo_Respuesta_Horas;
+GO
+
+-- Migracion: COORDINADOR se derivaba en gold (T-SQL sobre ORIGEN); ahora es
+-- una columna derivada de silver. Queda NULL hasta la siguiente carga de
+-- silver (main.py --desde silver --completo la llena para todo).
+IF COL_LENGTH('dbo.TBL_CORREO_REGISTRO_SILVER', 'COORDINADOR') IS NULL
+    ALTER TABLE dbo.TBL_CORREO_REGISTRO_SILVER ADD COORDINADOR NVARCHAR(400) NULL;
+GO
+
+-- Estado actual de cada bandeja (TBL_CORREO_BANDEJAS de bronze) + COORDINADOR.
+-- Se reemplaza completa en cada corrida, igual que en bronze. Es el origen
+-- de gold.DIM_BANDEJA.
+IF OBJECT_ID('dbo.TBL_CORREO_BANDEJAS_SILVER', 'U') IS NULL
+    CREATE TABLE dbo.TBL_CORREO_BANDEJAS_SILVER (
+        Correo_Bandeja           NVARCHAR(255)  NULL,
+        Asesor                    NVARCHAR(200)  NULL,
+        UltimaRevisionEntrada     DATETIME2(7)   NULL,
+        UltimaRevisionSalida      DATETIME2(7)   NULL,
+        ORIGEN                    NVARCHAR(400)  NULL,
+        COORDINADOR               NVARCHAR(400)  NULL
+    );
 GO

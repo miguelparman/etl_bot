@@ -4,12 +4,12 @@ del rango."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from comun.exceptions import PeriodoError
-from comun.periodo import parse_fecha_utc, resolver_periodo
+from comun.periodo import ahora_local, parse_fecha_utc, resolver_periodo
 
 
 def test_parse_fecha_utc_sin_offset_queda_naive():
@@ -32,6 +32,13 @@ def test_parse_fecha_utc_fin_con_hora_no_se_desplaza():
 def test_parse_fecha_utc_con_offset_se_normaliza_a_utc_naive():
     # -05:00 (Peru/Bogota) equivale a las 05:00 UTC
     assert parse_fecha_utc("2026-09-01T00:00:00-05:00") == datetime(2026, 9, 1, 5, 0, 0)
+
+
+def test_ahora_local_es_utc_menos_5_naive_y_al_segundo():
+    utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    local = ahora_local()
+    assert local.tzinfo is None and local.microsecond == 0
+    assert abs((utc - local) - timedelta(hours=5)) < timedelta(seconds=5)
 
 
 def test_resolver_periodo_ok():

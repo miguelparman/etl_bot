@@ -1,13 +1,27 @@
-"""Constantes de la capa SILVER (ver cargar.py): tabla destino, columnas que
+"""Constantes de la capa SILVER (ver cargar.py): tablas destino, columnas que
 se toman de bronze y reglas de ASUNTO_AGRUPADO."""
 
 from __future__ import annotations
 
-from bronze.mappings import COLUMNA_ORIGEN, COLUMNAS_REGISTRO
+from bronze.mappings import COLUMNA_CONTROL_FECHA, COLUMNA_ORIGEN, COLUMNAS_BANDEJAS, COLUMNAS_REGISTRO
 
 ESQUEMA = "dbo"
 TABLA_REGISTRO_SILVER = "TBL_CORREO_REGISTRO_SILVER"
+TABLA_BANDEJAS_SILVER = "TBL_CORREO_BANDEJAS_SILVER"
 COLUMNA_ASUNTO_AGRUPADO = "ASUNTO_AGRUPADO"
+# Nombre del coordinador, derivado de ORIGEN (cada .xlsx es el control de un
+# coordinador: 'Registro_JHON_MORALES_PENA.xlsx' -> 'JHON MORALES PENA').
+COLUMNA_COORDINADOR = "COORDINADOR"
+
+# Mismo campo de control de periodo que bronze (silver conserva el nombre):
+# se re-exporta para que gold lea todo lo de silver desde aqui, sin importar
+# bronze.
+COLUMNA_CONTROL_FECHA = COLUMNA_CONTROL_FECHA
+
+# TBL_CORREO_BANDEJAS_SILVER: todas las columnas de bronze + COORDINADOR.
+# Se reemplaza completa en cada corrida, igual que en bronze (es el estado
+# actual de cada bandeja, no un historial).
+COLUMNAS_BANDEJAS_SILVER_DESDE_BRONZE = [*COLUMNAS_BANDEJAS, COLUMNA_ORIGEN]
 
 # Columnas de bronze que NO pasan a silver (ni a gold): son calculos que hace
 # la macro del Excel y no son confiables (ej. Tiempo_Respuesta_Horas ~1.110.900

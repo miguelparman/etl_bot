@@ -9,9 +9,15 @@ from datetime import datetime
 import pandas as pd
 import pytest
 
-from bronze.mappings import TABLA_REGISTRO
-from silver.cargar import agrupar_asunto, cargar_periodo_silver, recargar_silver_completo
-from silver.mappings import COLUMNAS_EXCLUIDAS_SILVER, TABLA_REGISTRO_SILVER
+from bronze.mappings import TABLA_BANDEJAS, TABLA_REGISTRO
+from silver.cargar import (
+    agrupar_asunto,
+    cargar_bandejas_silver,
+    cargar_periodo_silver,
+    coordinador_desde_origen,
+    recargar_silver_completo,
+)
+from silver.mappings import COLUMNAS_EXCLUIDAS_SILVER, TABLA_BANDEJAS_SILVER, TABLA_REGISTRO_SILVER
 from tests.unit.fakes import FakeDatabaseGateway
 
 
@@ -58,6 +64,7 @@ def _bronze_df() -> pd.DataFrame:
             "FechaHora_UTC_Texto": [datetime(2026, 9, 5), datetime(2026, 9, 6)],
             "Asunto": ["Correo de prueba", "Re: consulta"],
             "ID_Mensaje": ["MSG-1", "MSG-2"],
+            "ORIGEN": ["Registro_JHON_MORALES_PENA.xlsx", None],
         }
     )
 
@@ -83,6 +90,7 @@ def test_cargar_periodo_silver_lee_bronze_y_reemplaza_el_periodo():
 
     insertado = gateway.inserted[TABLA_REGISTRO_SILVER]
     assert list(insertado["ASUNTO_AGRUPADO"]) == ["PRUEBA", None]
+    assert list(insertado["COORDINADOR"]) == ["JHON MORALES PENA", None]
     assert (eliminadas, insertadas) == (5, 2)
 
 
@@ -97,4 +105,45 @@ def test_recargar_silver_completo_trunca_y_lee_todo_bronze():
     assert params_select == ()
     assert gateway.truncated_tables == [TABLA_REGISTRO_SILVER]
     assert gateway.deletes == []
+    assert insertadas == 2
+
+
+@pytest.mark.parametrize(
+    ("origen", "esperado"),
+    [
+        ("Registro_JHON_MORALES_PENA.xlsx", "JHON MORALES PENA"),
+        ("registro_ana_perez.XLSX", "ana perez"),  # prefijo sin distinguir mayusculas
+        ("Registro_RODRIGUEZ_ALEY_DE_GARCIA_MARITZA_JOHANNA.xlsm", "RODRIGUEZ ALEY DE GARCIA MARITZA JOHANNA"),
+        ("OTRO_ARCHIVO.xlsx", "OTRO ARCHIVO"),  # sin prefijo: se conserva el nombre
+        ("Registro_.xlsx", None),
+        ("", None),
+        (None, None),
+        (float("nan"), None),
+    ],
+)
+def test_coordinador_desde_origen(origen, esperado):
+    assert coordinador_desde_origen(origen) == esperado
+
+
+def test_cargar_bandejas_silver_reemplaza_completo_y_agrega_coordinador():
+    gateway = FakeDatabaseGateway()
+    gateway.resultado_select = pd.DataFrame(
+        {
+            "Correo_Bandeja": ["SM1@movistar.cl", "SM2@movistar.cl"],
+            "Asesor": ["A", "B"],
+            "UltimaRevisionEntrada": [datetime(2026, 9, 22), None],
+            "UltimaRevisionSalida": [None, None],
+            "ORIGEN": ["Registro_JHON_MORALES_PENA.xlsx", "Registro_ALICIA_DEL_VALLE_SANCHEZ_NAMIAS.xlsx"],
+        }
+    )
+
+    insertadas = cargar_bandejas_silver(gateway)
+
+    sql_select, params_select = gateway.selects[0]
+    assert f"[{TABLA_BANDEJAS}]" in sql_select and "WHERE" not in sql_select
+    assert gateway.truncated_tables == [TABLA_BANDEJAS_SILVER]
+    assert list(gateway.inserted[TABLA_BANDEJAS_SILVER]["COORDINADOR"]) == [
+        "JHON MORALES PENA",
+        "ALICIA DEL VALLE SANCHEZ NAMIAS",
+    ]
     assert insertadas == 2

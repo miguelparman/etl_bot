@@ -1,6 +1,6 @@
 -- Capa GOLD de la estructura medallion (ver src/correos/gold/cargar.py y sql.py): modelo
--- estrella en el esquema [gold], construido desde silver
--- (dbo.TBL_CORREO_REGISTRO_SILVER) y dbo.TBL_CORREO_BANDEJAS.
+-- estrella en el esquema [gold], construido SOLO desde silver
+-- (dbo.TBL_CORREO_REGISTRO_SILVER y dbo.TBL_CORREO_BANDEJAS_SILVER).
 --
 --   gold.FACT_MENSAJE          1 fila por mensaje (grano: ID_MENSAJE)
 --   gold.DIM_FECHA             calendario (fecha LOCAL Peru/Bogota)
@@ -44,9 +44,9 @@ IF OBJECT_ID('gold.DIM_BANDEJA', 'U') IS NULL
         BANDEJA_KEY                  INT IDENTITY(1, 1) NOT NULL CONSTRAINT PK_DIM_BANDEJA PRIMARY KEY,
         BANDEJA                      NVARCHAR(255)  NOT NULL CONSTRAINT UQ_DIM_BANDEJA_BANDEJA UNIQUE,
         ASESOR                       NVARCHAR(200)  NULL,
-        COORDINADOR                  NVARCHAR(400)  NULL,  -- nombre del .xlsx sin 'Registro_' ni extension, '_' -> ' '
+        COORDINADOR                  NVARCHAR(400)  NULL,  -- calculado en silver (nombre del .xlsx sin 'Registro_' ni extension)
         ORIGEN                       NVARCHAR(400)  NULL,
-        ULTIMA_REVISION_ENTRADA_UTC  DATETIME2(0)   NULL,  -- estado actual, desde dbo.TBL_CORREO_BANDEJAS
+        ULTIMA_REVISION_ENTRADA_UTC  DATETIME2(0)   NULL,  -- estado actual, desde dbo.TBL_CORREO_BANDEJAS_SILVER
         ULTIMA_REVISION_SALIDA_UTC   DATETIME2(0)   NULL
     );
 GO
@@ -103,11 +103,29 @@ BEGIN
         CONTACTO             NVARCHAR(MAX)  NULL,
         FECHA_HORA_UTC       DATETIME2(7)   NOT NULL,  -- campo de control de periodo, misma precision que silver (el DELETE por rango debe coincidir exacto)
         FECHA_HORA_LOCAL     DATETIME2(0)   NOT NULL,
-        CANTIDAD             INT            NOT NULL CONSTRAINT DF_FACT_MENSAJE_CANTIDAD DEFAULT (1)
+        CANTIDAD             INT            NOT NULL CONSTRAINT DF_FACT_MENSAJE_CANTIDAD DEFAULT (1),
+        -- Auditoria (ver gold/cargar.py y comun/ejecucion.py):
+        TABLA_ORIGEN         NVARCHAR(128)  NULL,  -- tabla silver de la que sale la fila
+        PROCESO_CARGA        NVARCHAR(200)  NULL,  -- archivo:funcion que inserto la fila
+        ID_EJECUCION         BIGINT         NULL,  -- corrida de main.py -> dbo.TBL_CORREO_LOG_EJECUCION (FK en 04_log_ejecucion.sql)
+        FECHA_CARGA          DATETIME2(0)   NULL   -- inicio de esa corrida, hora local Peru/Bogota
     );
 
     CREATE INDEX IX_FACT_MENSAJE_FECHA_HORA_UTC ON gold.FACT_MENSAJE (FECHA_HORA_UTC);
     CREATE INDEX IX_FACT_MENSAJE_FECHA_KEY ON gold.FACT_MENSAJE (FECHA_KEY);
     CREATE INDEX IX_FACT_MENSAJE_BANDEJA_KEY ON gold.FACT_MENSAJE (BANDEJA_KEY);
 END
+GO
+
+-- Migracion: columnas de auditoria para una FACT_MENSAJE creada antes de que
+-- existieran. Las filas ya cargadas quedan en NULL hasta que se recargue su
+-- periodo (main.py --solo gold --completo las llena todas).
+IF COL_LENGTH('gold.FACT_MENSAJE', 'TABLA_ORIGEN') IS NULL
+    ALTER TABLE gold.FACT_MENSAJE ADD TABLA_ORIGEN NVARCHAR(128) NULL;
+IF COL_LENGTH('gold.FACT_MENSAJE', 'PROCESO_CARGA') IS NULL
+    ALTER TABLE gold.FACT_MENSAJE ADD PROCESO_CARGA NVARCHAR(200) NULL;
+IF COL_LENGTH('gold.FACT_MENSAJE', 'ID_EJECUCION') IS NULL
+    ALTER TABLE gold.FACT_MENSAJE ADD ID_EJECUCION BIGINT NULL;
+IF COL_LENGTH('gold.FACT_MENSAJE', 'FECHA_CARGA') IS NULL
+    ALTER TABLE gold.FACT_MENSAJE ADD FECHA_CARGA DATETIME2(0) NULL;
 GO

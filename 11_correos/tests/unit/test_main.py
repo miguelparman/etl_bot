@@ -39,6 +39,21 @@ def test_desde_y_solo_son_excluyentes():
 
 
 @pytest.mark.parametrize(
+    ("no_copiados", "validacion", "estado", "hay_mensaje"),
+    [
+        (0, "OK", "OK", False),
+        (0, None, "OK", False),  # gold no corrio
+        (2, "OK", "ERROR", True),  # archivos que no se copiaron
+        (0, "NO CUADRA", "ERROR", True),
+    ],
+)
+def test_estado_final(no_copiados, validacion, estado, hay_mensaje):
+    obtenido, mensaje = main.estado_final(no_copiados, validacion)
+    assert obtenido == estado
+    assert bool(mensaje) is hay_mensaje
+
+
+@pytest.mark.parametrize(
     ("etapas", "completo", "necesita"),
     [
         (["ingesta"], False, False),  # la copia no usa periodo

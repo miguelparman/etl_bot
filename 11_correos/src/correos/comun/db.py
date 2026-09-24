@@ -69,6 +69,25 @@ class DatabaseGateway:
             self._conn.rollback()
             raise CargaError(f"Fallo la ejecucion del script T-SQL: {exc}") from exc
 
+    def insert_returning_id(self, sql: str, params: Sequence[Any] | None = None) -> int:
+        """Ejecuta un INSERT con 'OUTPUT INSERTED.<id>' y devuelve ese id
+        (confirmado con commit). Usado por comun/ejecucion.py para abrir una
+        fila en el log de ejecuciones."""
+        try:
+            cursor = self._conn.cursor()
+            try:
+                cursor.execute(sql, tuple(params) if params else ())
+                fila = cursor.fetchone()
+                self._conn.commit()
+            finally:
+                cursor.close()
+        except Exception as exc:
+            self._conn.rollback()
+            raise CargaError(f"Fallo el INSERT con id de retorno: {exc}") from exc
+        if fila is None:
+            raise CargaError("El INSERT no devolvio un id (falta 'OUTPUT INSERTED.<id>').")
+        return int(fila[0])
+
     def fetch_dataframe(self, sql: str, params: Sequence[Any] | None = None) -> pd.DataFrame:
         """Ejecuta un SELECT y devuelve el resultado como DataFrame (usado por
         silver/cargar.py para leer la capa bronze). Se arma a mano desde el cursor

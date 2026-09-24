@@ -2,15 +2,19 @@
 
 - Bronze: TBL_CORREO_REGISTRO -- los 'Registro' de los .xlsx tal cual (+ ORIGEN),
   cargada por bronze/cargar.py.
-- Silver: TBL_CORREO_REGISTRO_SILVER -- se construye LEYENDO bronze (no los
-  .xlsx), SIN las columnas calculadas por el Excel que no son confiables
-  (silver/mappings.COLUMNAS_EXCLUIDAS_SILVER), y agregando columnas
-  derivadas. Hoy: ASUNTO_AGRUPADO (ver silver/mappings.REGLAS_ASUNTO_AGRUPADO).
-- Gold: modelo estrella en el esquema 'gold' -- ver gold/cargar.py.
+- Silver (se construye LEYENDO bronze, nunca los .xlsx):
+  - TBL_CORREO_REGISTRO_SILVER: sin las columnas calculadas por el Excel que
+    no son confiables (silver/mappings.COLUMNAS_EXCLUIDAS_SILVER), y con
+    columnas derivadas: ASUNTO_AGRUPADO (ver
+    silver/mappings.REGLAS_ASUNTO_AGRUPADO) y COORDINADOR.
+  - TBL_CORREO_BANDEJAS_SILVER: TBL_CORREO_BANDEJAS + COORDINADOR.
+- Gold: modelo estrella en el esquema 'gold', lee SOLO de silver -- ver
+  gold/cargar.py.
 
-Misma estrategia de carga que bronze: por periodo (DELETE + INSERT del rango
-sobre FechaHora_UTC_Texto), o completa (TRUNCATE + INSERT de todo bronze)
-para la carga inicial / una reconstruccion.
+Registro: misma estrategia de carga que bronze, por periodo (DELETE + INSERT
+del rango sobre FechaHora_UTC_Texto), o completa (TRUNCATE + INSERT de todo
+bronze) para la carga inicial / una reconstruccion. Bandejas: siempre
+completa, igual que en bronze.
 """
 
 from __future__ import annotations
@@ -22,16 +26,21 @@ from datetime import datetime
 
 import pandas as pd
 
-from bronze.mappings import COLUMNA_CONTROL_FECHA, TABLA_REGISTRO
+from bronze.mappings import COLUMNA_CONTROL_FECHA, COLUMNA_ORIGEN, TABLA_BANDEJAS, TABLA_REGISTRO
 from bronze.mappings import ESQUEMA as ESQUEMA_BRONZE
 from comun.logging_setup import NOMBRE_LOGGER
 from silver.mappings import (
     COLUMNA_ASUNTO_AGRUPADO,
+    COLUMNA_COORDINADOR,
+    COLUMNAS_BANDEJAS_SILVER_DESDE_BRONZE,
     COLUMNAS_SILVER_DESDE_BRONZE,
     ESQUEMA,
     REGLAS_ASUNTO_AGRUPADO,
+    TABLA_BANDEJAS_SILVER,
     TABLA_REGISTRO_SILVER,
 )
+
+_PREFIJO_ORIGEN = "registro_"
 
 logger = logging.getLogger(NOMBRE_LOGGER)
 
@@ -70,9 +79,31 @@ def agrupar_asunto(asunto: object) -> str | None:
     return None
 
 
+def coordinador_desde_origen(origen: object) -> str | None:
+    """Nombre del coordinador a partir del nombre del .xlsx: sin el prefijo
+    'Registro_' (sin distinguir mayusculas), sin extension y con '_' -> ' '.
+    'Registro_JHON_MORALES_PENA.xlsx' -> 'JHON MORALES PENA'. None si vacio."""
+    if not isinstance(origen, str) or not origen.strip():
+        return None
+    nombre = origen.strip()
+    if nombre.casefold().startswith(_PREFIJO_ORIGEN):
+        nombre = nombre[len(_PREFIJO_ORIGEN) :]
+    if "." in nombre:
+        nombre = nombre.rsplit(".", 1)[0]
+    nombre = nombre.replace("_", " ").strip()
+    return nombre or None
+
+
 def construir_silver(bronze_df: pd.DataFrame) -> pd.DataFrame:
     df = bronze_df.copy()
     df[COLUMNA_ASUNTO_AGRUPADO] = df["Asunto"].map(agrupar_asunto)
+    df[COLUMNA_COORDINADOR] = df[COLUMNA_ORIGEN].map(coordinador_desde_origen)
+    return df
+
+
+def construir_bandejas_silver(bronze_df: pd.DataFrame) -> pd.DataFrame:
+    df = bronze_df.copy()
+    df[COLUMNA_COORDINADOR] = df[COLUMNA_ORIGEN].map(coordinador_desde_origen)
     return df
 
 
@@ -125,3 +156,17 @@ def recargar_silver_completo(gateway) -> int:
 
     gateway.truncate_table(TABLA_REGISTRO_SILVER, schema=ESQUEMA)
     return gateway.bulk_insert(TABLA_REGISTRO_SILVER, silver_df, schema=ESQUEMA)
+
+
+def cargar_bandejas_silver(gateway) -> int:
+    """TBL_CORREO_BANDEJAS (bronze) -> TBL_CORREO_BANDEJAS_SILVER, siempre
+    completa: bronze tambien la reemplaza entera en cada corrida (es el
+    estado actual de cada bandeja, no tiene periodo). Devuelve filas
+    insertadas."""
+    columnas_sql = ", ".join(f"[{c}]" for c in COLUMNAS_BANDEJAS_SILVER_DESDE_BRONZE)
+    bronze_df = gateway.fetch_dataframe(f"SELECT {columnas_sql} FROM [{ESQUEMA_BRONZE}].[{TABLA_BANDEJAS}]")
+    logger.info("%s fila(s) leidas de [%s].[%s] (bronze).", len(bronze_df), ESQUEMA_BRONZE, TABLA_BANDEJAS)
+    silver_df = construir_bandejas_silver(bronze_df)
+
+    gateway.truncate_table(TABLA_BANDEJAS_SILVER, schema=ESQUEMA)
+    return gateway.bulk_insert(TABLA_BANDEJAS_SILVER, silver_df, schema=ESQUEMA)

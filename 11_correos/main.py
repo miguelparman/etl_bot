@@ -4,12 +4,16 @@
    SharePoint 'BPO') hacia '14 CORREOS' (sitio 'ReportingFractalia').
 2. bronze:  consolida 'Registro'/'Bandejas' de esos archivos y los carga tal
    cual en SQL Server ('CL_MOVIL'), por periodo.
-3. silver:  bronze -> TBL_CORREO_REGISTRO_SILVER (limpio + ASUNTO_AGRUPADO).
-4. gold:    silver -> modelo estrella en el esquema 'gold', y valida que cuadre.
+3. silver:  bronze -> TBL_CORREO_REGISTRO_SILVER (limpio + ASUNTO_AGRUPADO +
+            COORDINADOR) y TBL_CORREO_BANDEJAS_SILVER.
+4. gold:    silver -> modelo estrella en el esquema 'gold' (lee solo silver),
+            y valida que cuadre.
 
 El periodo sale de FECHA_INICIO/FECHA_FIN en '.env' (o --fecha-inicio/
 --fecha-fin). Un fallo en una etapa detiene las siguientes pero no deshace
-las anteriores; se reintenta con --desde / --solo.
+las anteriores; se reintenta con --desde / --solo. Cada corrida (salvo
+--verificar-copia) queda en dbo.TBL_CORREO_LOG_EJECUCION; su ID_EJECUCION
+se graba en cada fila de gold.FACT_MENSAJE.
 
 Uso:
     python main.py                            # todo: ingesta -> bronze -> silver -> gold
@@ -34,13 +38,21 @@ sys.path.insert(0, str(BASE_DIR / "src" / "correos"))
 from bronze.cargar import ejecutar_bronze
 from comun.config import Settings, cargar_configuracion, cargar_configuracion_db
 from comun.db import DatabaseGateway, crear_conexion
+from comun.ejecucion import (
+    ESTADO_ERROR,
+    ESTADO_OK,
+    Ejecucion,
+    ResultadoEjecucion,
+    finalizar_ejecucion,
+    iniciar_ejecucion,
+)
 from comun.exceptions import CorreosError
 from comun.logging_setup import NOMBRE_LOGGER, configurar_logging
 from comun.periodo import resolver_periodo
 from gold.cargar import cargar_periodo_gold, recargar_gold_completo, validar
 from ingesta.copiar import ejecutar_copia
 from ingesta.verificar_copia import ejecutar_verificacion
-from silver.cargar import cargar_periodo_silver, recargar_silver_completo
+from silver.cargar import cargar_bandejas_silver, cargar_periodo_silver, recargar_silver_completo
 
 logger = logging.getLogger(NOMBRE_LOGGER)
 
@@ -87,29 +99,49 @@ def ejecutar_etapas_db(
     etapas: list[str],
     periodo: tuple[datetime, datetime] | None,
     completo: bool,
-) -> bool:
-    """bronze / silver / gold sobre una misma conexion. Devuelve False si la
-    validacion de gold no cuadra."""
+    ejecucion: Ejecucion,
+    resultado: ResultadoEjecucion,
+) -> None:
+    """bronze / silver / gold sobre una misma conexion. Va completando
+    'resultado' (filas por etapa, validacion de gold) a medida que avanza:
+    si una etapa falla, el log conserva lo que alcanzo a cargar."""
     if "bronze" in etapas:
-        ejecutar_bronze(settings.destino, gateway, *periodo)
+        _, resultado.filas_bronze, _ = ejecutar_bronze(settings.destino, gateway, *periodo)
 
     if "silver" in etapas:
         if completo:
-            insertadas = recargar_silver_completo(gateway)
-            logger.info("Silver reconstruida completa: %s fila(s) insertadas.", insertadas)
+            resultado.filas_silver = recargar_silver_completo(gateway)
+            logger.info("Silver reconstruida completa: %s fila(s) insertadas.", resultado.filas_silver)
         else:
-            eliminadas, insertadas = cargar_periodo_silver(gateway, *periodo)
-            logger.info("Silver finalizada: %s eliminadas / %s insertadas (periodo).", eliminadas, insertadas)
+            eliminadas, resultado.filas_silver = cargar_periodo_silver(gateway, *periodo)
+            logger.info("Silver finalizada: %s eliminadas / %s insertadas (periodo).", eliminadas, resultado.filas_silver)
+        # Bandejas no tiene periodo: siempre completa (igual que en bronze).
+        insertadas_bandejas = cargar_bandejas_silver(gateway)
+        logger.info("Silver bandejas: %s fila(s) insertadas (total).", insertadas_bandejas)
 
     if "gold" in etapas:
         if completo:
-            insertadas = recargar_gold_completo(gateway)
-            logger.info("Gold reconstruida completa: %s fila(s) en FACT_MENSAJE.", insertadas)
-            return validar(gateway, None)
-        eliminadas, insertadas = cargar_periodo_gold(gateway, *periodo)
-        logger.info("Gold finalizada: %s eliminadas / %s insertadas en FACT_MENSAJE (periodo).", eliminadas, insertadas)
-        return validar(gateway, periodo)
-    return True
+            resultado.filas_gold = recargar_gold_completo(gateway, ejecucion)
+            logger.info("Gold reconstruida completa: %s fila(s) en FACT_MENSAJE.", resultado.filas_gold)
+            gold_ok = validar(gateway, None)
+        else:
+            eliminadas, resultado.filas_gold = cargar_periodo_gold(gateway, *periodo, ejecucion)
+            logger.info(
+                "Gold finalizada: %s eliminadas / %s insertadas en FACT_MENSAJE (periodo).", eliminadas, resultado.filas_gold
+            )
+            gold_ok = validar(gateway, periodo)
+        resultado.validacion_gold = "OK" if gold_ok else "NO CUADRA"
+
+
+def estado_final(archivos_no_copiados: int, validacion_gold: str | None) -> tuple[str, str | None]:
+    """ESTADO y MENSAJE_ERROR para el log de una corrida que llego al final
+    sin excepciones: ERROR si algun archivo no se copio o gold no cuadra."""
+    problemas = []
+    if archivos_no_copiados:
+        problemas.append(f"{archivos_no_copiados} archivo(s) no se copiaron en la ingesta (ver log).")
+    if validacion_gold == "NO CUADRA":
+        problemas.append("La validacion de gold no cuadra (ver log).")
+    return (ESTADO_ERROR, " ".join(problemas)) if problemas else (ESTADO_OK, None)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -128,25 +160,34 @@ def main(argv: list[str] | None = None) -> int:
             periodo = resolver_periodo(settings.fecha_inicio, settings.fecha_fin)
         logger.info("Etapas: %s%s.", " -> ".join(args.etapas), " (completo)" if args.completo else f" | periodo {periodo}")
 
-        copia_ok = True
-        if "ingesta" in args.etapas:
-            copia_ok = all(r.ok for r in ejecutar_copia(settings))
-
-        etapas_db = [e for e in args.etapas if e != "ingesta"]
-        gold_ok = True
-        if etapas_db:
-            db_settings = cargar_configuracion_db(BASE_DIR)
-            conn = crear_conexion(db_settings)
+        # La conexion se abre al inicio (aun si solo corre la ingesta): toda
+        # corrida queda registrada en dbo.TBL_CORREO_LOG_EJECUCION.
+        db_settings = cargar_configuracion_db(BASE_DIR)
+        conn = crear_conexion(db_settings)
+        try:
+            gateway = DatabaseGateway(conn, batch_size=db_settings.batch_size)
+            ejecucion = iniciar_ejecucion(gateway, args.etapas, args.completo, periodo)
+            resultado = ResultadoEjecucion()
             try:
-                gateway = DatabaseGateway(conn, batch_size=db_settings.batch_size)
-                gold_ok = ejecutar_etapas_db(gateway, settings, etapas_db, periodo, args.completo)
-            finally:
-                conn.close()
+                archivos_no_copiados = 0
+                if "ingesta" in args.etapas:
+                    archivos_no_copiados = sum(1 for r in ejecutar_copia(settings) if not r.ok)
+
+                etapas_db = [e for e in args.etapas if e != "ingesta"]
+                ejecutar_etapas_db(gateway, settings, etapas_db, periodo, args.completo, ejecucion, resultado)
+            except Exception as exc:
+                finalizar_ejecucion(gateway, ejecucion, ESTADO_ERROR, resultado, str(exc))
+                raise
+
+            estado, mensaje = estado_final(archivos_no_copiados, resultado.validacion_gold)
+            finalizar_ejecucion(gateway, ejecucion, estado, resultado, mensaje)
+        finally:
+            conn.close()
     except CorreosError as exc:
         logger.error("Proceso detenido: %s", exc)
         return 1
 
-    return 0 if copia_ok and gold_ok else 1
+    return 0 if estado == ESTADO_OK else 1
 
 
 if __name__ == "__main__":
