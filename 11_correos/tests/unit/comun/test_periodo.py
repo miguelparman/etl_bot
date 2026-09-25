@@ -4,12 +4,12 @@ del rango."""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
 from comun.exceptions import PeriodoError
-from comun.periodo import ahora_local, parse_fecha_utc, resolver_periodo
+from comun.periodo import ahora_local, parse_fecha_utc, periodo_automatico, resolver_periodo
 
 
 def test_parse_fecha_utc_sin_offset_queda_naive():
@@ -48,8 +48,8 @@ def test_resolver_periodo_ok():
 @pytest.mark.parametrize(
     ("inicio", "fin", "mensaje"),
     [
-        (None, "2026-09-30", "Debes definir"),
-        ("2026-09-01", "", "Debes definir"),
+        (None, "2026-09-30", "Periodo incompleto"),
+        ("2026-09-01", "", "Periodo incompleto"),
         ("no-es-fecha", "2026-09-30", "Fecha invalida"),
         ("2026-09-30T00:00:00", "2026-09-01T00:00:00", "posterior"),
     ],
@@ -57,3 +57,37 @@ def test_resolver_periodo_ok():
 def test_resolver_periodo_invalido(inicio, fin, mensaje):
     with pytest.raises(PeriodoError, match=mensaje):
         resolver_periodo(inicio, fin)
+
+
+@pytest.mark.parametrize(
+    ("hoy", "esperado"),
+    [
+        # Primeros 7 dias: mes anterior + mes en curso.
+        (date(2026, 9, 1), (datetime(2026, 8, 1), datetime(2026, 10, 1))),
+        (date(2026, 9, 7), (datetime(2026, 8, 1), datetime(2026, 10, 1))),
+        # Desde el dia 8: solo el mes en curso.
+        (date(2026, 9, 8), (datetime(2026, 9, 1), datetime(2026, 10, 1))),
+        (date(2026, 9, 30), (datetime(2026, 9, 1), datetime(2026, 10, 1))),
+        # Cruce de anio.
+        (date(2027, 1, 5), (datetime(2026, 12, 1), datetime(2027, 2, 1))),
+        (date(2026, 12, 15), (datetime(2026, 12, 1), datetime(2027, 1, 1))),
+    ],
+)
+def test_periodo_automatico(hoy, esperado):
+    assert periodo_automatico(hoy) == esperado
+
+
+@pytest.mark.parametrize(("inicio", "fin"), [(None, None), ("", "")])
+def test_resolver_periodo_sin_fechas_es_automatico(inicio, fin):
+    assert resolver_periodo(inicio, fin, hoy=date(2026, 9, 7)) == (datetime(2026, 8, 1), datetime(2026, 10, 1))
+
+
+def test_resolver_periodo_sin_fechas_usa_la_fecha_local_por_defecto():
+    assert resolver_periodo(None, None) == periodo_automatico(ahora_local().date())
+
+
+def test_resolver_periodo_manual_ignora_hoy():
+    assert resolver_periodo("2026-09-01", "2026-09-30", hoy=date(2026, 12, 3)) == (
+        datetime(2026, 9, 1),
+        datetime(2026, 10, 1),
+    )

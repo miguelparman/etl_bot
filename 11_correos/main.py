@@ -10,13 +10,16 @@
             y valida que cuadre.
 
 El periodo sale de FECHA_INICIO/FECHA_FIN en '.env' (o --fecha-inicio/
---fecha-fin). Un fallo en una etapa detiene las siguientes pero no deshace
-las anteriores; se reintenta con --desde / --solo. Cada corrida (salvo
---verificar-copia) queda en dbo.TBL_CORREO_LOG_EJECUCION; su ID_EJECUCION
-se graba en cada fila de gold.FACT_MENSAJE.
+--fecha-fin). Si ambas estan vacias es automatico: el mes en curso y, los
+primeros 7 dias del mes, tambien el anterior (ver comun/periodo.py). Un
+fallo en una etapa detiene las siguientes pero no deshace las anteriores;
+se reintenta con --desde / --solo. Cada corrida (salvo --verificar-copia)
+queda en dbo.TBL_CORREO_LOG_EJECUCION; su ID_EJECUCION se graba
+en cada fila de gold.FACT_MENSAJE.
 
 Uso:
     python main.py                            # todo: ingesta -> bronze -> silver -> gold
+                                              # (periodo automatico si '.env' no lo fija)
     python main.py --desde silver             # reintentar desde silver (bronze ya cargado)
     python main.py --solo gold                # una sola etapa
     python main.py --solo gold --completo     # reconstruir una etapa completa (silver/gold)
@@ -73,8 +76,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Silver/gold se reconstruyen completos (sin filtro de periodo). Solo con --solo/--desde silver|gold.",
     )
-    parser.add_argument("--fecha-inicio", default=None, help="UTC; solo fecha (2026-09-01) o fecha y hora. Si se omite, FECHA_INICIO de '.env'.")
-    parser.add_argument("--fecha-fin", default=None, help="UTC; solo fecha (2026-09-30, dia incluido completo) o fecha y hora (exclusiva). Si se omite, FECHA_FIN de '.env'.")
+    parser.add_argument("--fecha-inicio", default=None, help="UTC; solo fecha (2026-09-01) o fecha y hora. Si se omite, FECHA_INICIO de '.env' (vacia = periodo automatico).")
+    parser.add_argument("--fecha-fin", default=None, help="UTC; solo fecha (2026-09-30, dia incluido completo) o fecha y hora (exclusiva). Si se omite, FECHA_FIN de '.env' (vacia = periodo automatico).")
     args = parser.parse_args(argv)
 
     args.etapas = seleccionar_etapas(args.desde, args.solo)
@@ -91,6 +94,21 @@ def seleccionar_etapas(desde: str | None, solo: str | None) -> list[str]:
 
 def _necesita_periodo(etapas: list[str], completo: bool) -> bool:
     return "bronze" in etapas or (not completo and bool(set(etapas) & ETAPAS_CON_COMPLETO))
+
+
+def aviso_periodo_manual(
+    periodo: tuple[datetime, datetime] | None, cli_inicio: str | None, cli_fin: str | None, settings: Settings
+) -> str | None:
+    """Mensaje de advertencia cuando el periodo NO es el automatico: se
+    fijo por --fecha-inicio/--fecha-fin o por FECHA_INICIO/FECHA_FIN en
+    '.env'. None si el periodo es automatico o la corrida no usa periodo."""
+    if periodo is None or not (settings.fecha_inicio or settings.fecha_fin):
+        return None
+    origen = "--fecha-inicio/--fecha-fin" if cli_inicio or cli_fin else "FECHA_INICIO/FECHA_FIN de '.env'"
+    return (
+        f"ATENCION: periodo MANUAL definido en {origen}. La carga tomara "
+        f"[{periodo[0]:%Y-%m-%d %H:%M}, {periodo[1]:%Y-%m-%d %H:%M}) en vez del periodo automatico."
+    )
 
 
 def ejecutar_etapas_db(
@@ -158,7 +176,17 @@ def main(argv: list[str] | None = None) -> int:
         periodo = None
         if _necesita_periodo(args.etapas, args.completo):
             periodo = resolver_periodo(settings.fecha_inicio, settings.fecha_fin)
-        logger.info("Etapas: %s%s.", " -> ".join(args.etapas), " (completo)" if args.completo else f" | periodo {periodo}")
+        if args.completo:
+            detalle = " (completo)"
+        elif periodo is None:
+            detalle = ""
+        else:
+            origen = "manual" if settings.fecha_inicio or settings.fecha_fin else "automatico"
+            detalle = f" | periodo {origen} [{periodo[0]:%Y-%m-%d %H:%M}, {periodo[1]:%Y-%m-%d %H:%M})"
+        logger.info("Etapas: %s%s.", " -> ".join(args.etapas), detalle)
+        aviso = aviso_periodo_manual(periodo, args.fecha_inicio, args.fecha_fin, settings)
+        if aviso:
+            logger.warning(aviso)
 
         # La conexion se abre al inicio (aun si solo corre la ingesta): toda
         # corrida queda registrada en dbo.TBL_CORREO_LOG_EJECUCION.

@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from types import SimpleNamespace
+
 import pytest
 
 import main
@@ -64,3 +67,30 @@ def test_estado_final(no_copiados, validacion, estado, hay_mensaje):
 )
 def test_necesita_periodo(etapas, completo, necesita):
     assert main._necesita_periodo(etapas, completo) is necesita
+
+
+PERIODO = (datetime(2026, 9, 1), datetime(2026, 10, 1))
+
+
+def _settings(inicio, fin):
+    return SimpleNamespace(fecha_inicio=inicio, fecha_fin=fin)
+
+
+def test_sin_aviso_con_periodo_automatico():
+    assert main.aviso_periodo_manual(PERIODO, None, None, _settings("", "")) is None
+
+
+def test_sin_aviso_si_la_corrida_no_usa_periodo():
+    assert main.aviso_periodo_manual(None, "2026-09-01", "2026-09-30", _settings("2026-09-01", "2026-09-30")) is None
+
+
+def test_aviso_con_fechas_por_linea_de_comandos():
+    aviso = main.aviso_periodo_manual(PERIODO, "2026-09-01", "2026-09-30", _settings("2026-09-01", "2026-09-30"))
+    assert "--fecha-inicio/--fecha-fin" in aviso
+    assert "[2026-09-01 00:00, 2026-10-01 00:00)" in aviso
+    assert "en vez del periodo automatico" in aviso
+
+
+def test_aviso_con_fechas_en_env():
+    aviso = main.aviso_periodo_manual(PERIODO, None, None, _settings("2026-09-01", "2026-09-30"))
+    assert "'.env'" in aviso
