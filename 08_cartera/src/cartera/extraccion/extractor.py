@@ -11,7 +11,6 @@ lectura de archivos).
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 import pandas as pd
 
@@ -23,14 +22,14 @@ from spreadsheet import SpreadsheetReader
 logger = logging.getLogger("cartera")
 
 
-def extraer(reader: SpreadsheetReader, excel_path: Path, periodo: Periodo) -> pd.DataFrame:
+def extraer(reader: SpreadsheetReader, excel_path: str, periodo: Periodo) -> pd.DataFrame:
     df = _leer(reader, excel_path)
     df = _truncar(df)
     df = _agregar_periodo(df, periodo)
     return df[list(mappings.STAGING_INSERT_COLUMNS)]
 
 
-def _leer(reader: SpreadsheetReader, excel_path: Path) -> pd.DataFrame:
+def _leer(reader: SpreadsheetReader, excel_path: str) -> pd.DataFrame:
     try:
         df = reader.read_sheet(excel_path, mappings.EXCEL_SHEET)
     except Exception as exc:

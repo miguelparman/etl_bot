@@ -1,4 +1,3 @@
-from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -26,7 +25,7 @@ def _build_pipeline():
         db_cartera=db_cartera,
         db_temporales=db_temporales,
         spreadsheet_reader=reader,
-        excel_path=Path("CARTERA_FRACTALIA.xlsx"),
+        excel_path="05 CARTERA/CARTERA_FRACTALIA.xlsx",
     )
     return pipeline, db_cartera, db_temporales
 

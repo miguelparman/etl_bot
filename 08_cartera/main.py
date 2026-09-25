@@ -10,7 +10,7 @@ para el detalle completo):
 
 Arquitectura ("src layout": codigo en src/cartera/, modular, dividida en
 las 4 capas del proceso original, una carpeta por capa):
-    extraccion/extractor.py       Extraccion: Excel -> DataFrame saneado.
+    extraccion/extractor.py       Extraccion: Excel (SharePoint) -> DataFrame saneado.
     validacion/validator.py       Validacion: los 4 controles de la tarea 'VALIDA'.
     transformacion/transformer.py Transformacion: CARGA DNI, ACTUALIZA STATUS,
                                    LIMITA CLIENTES, LIMPIA TEMPORAL.
@@ -23,10 +23,12 @@ las 4 capas del proceso original, una carpeta por capa):
                                    de truncamiento, y las sentencias T-SQL
                                    migradas literalmente de cada Execute SQL Task.
     db.py, spreadsheet.py         Adaptadores concretos: pyodbc (SQL Server) y
-                                   pandas/openpyxl (Excel).
+                                   pandas/openpyxl (Excel descargado de SharePoint).
+    sharepoint/                   Adaptadores Microsoft Graph: auth.py (token
+                                   client credentials) y client.py (site/drive/descarga).
     config.py, logging_setup.py   Configuracion via '.env' y logging.
-    main.py (este archivo)        Composition root: arma db.py/spreadsheet.py y
-                                   los pasa a CarteraPipeline.
+    main.py (este archivo)        Composition root: arma db.py/spreadsheet.py (con
+                                   el cliente Graph) y los pasa a CarteraPipeline.
 
 Configuracion:
     Los valores se leen del archivo '.env' (junto a este script; ver
@@ -34,7 +36,9 @@ Configuracion:
     embebida en el codigo -- las 2 conexiones OLE DB del paquete original
     tenian password DPAPI-encriptado por usuario/maquina, imposible de
     reutilizar fuera de esa maquina; aqui se declaran en '.env' (no
-    versionado).
+    versionado). El Excel de origen (CARTERA_FRACTALIA.xlsx) se descarga de
+    SharePoint (sitio ReportingFractalia) via Microsoft Graph con un App
+    Registration (Sites.Selected), en vez de leerse de una ruta local/de red.
 
 Uso:
     python main.py --fecha-inicio 20260827   # equivalente a editar a mano
@@ -58,6 +62,8 @@ from exceptions import CarteraError, PipelineError, ValidacionError
 from logging_setup import NOMBRE_LOGGER, configurar_logging
 from models import Periodo, hoy_yyyymmdd
 from pipeline import CarteraPipeline
+from sharepoint.auth import GraphAuthError, get_graph_token
+from sharepoint.client import SharePointClient, SharePointResolutionError
 from spreadsheet import SpreadsheetReader
 
 logger = logging.getLogger(NOMBRE_LOGGER)
@@ -93,14 +99,20 @@ def main() -> int:
     conn_cartera = None
     conn_temporales = None
     try:
+        sp = settings.sharepoint
+        token = get_graph_token(sp.tenant_id, sp.client_id, sp.client_secret, sp.timeout_ms)
+        client = SharePointClient(token, sp.timeout_ms)
+        site_id = client.resolve_site(sp.hostname, sp.site_path)
+        drive_id = client.resolve_drive(site_id, sp.drive_name)
+
         conn_cartera = crear_conexion(settings.db_cartera)
         conn_temporales = crear_conexion(settings.db_temporales)
 
         pipeline = CarteraPipeline(
             db_cartera=DatabaseGateway(conn_cartera, settings.batch_size),
             db_temporales=DatabaseGateway(conn_temporales, settings.batch_size),
-            spreadsheet_reader=SpreadsheetReader(),
-            excel_path=settings.excel_path,
+            spreadsheet_reader=SpreadsheetReader(client, drive_id),
+            excel_path=sp.excel_path,
         )
         resultado = pipeline.run(periodo)
 
@@ -119,6 +131,10 @@ def main() -> int:
         else:
             logger.error("Error durante la carga de Cartera: %s", exc)
         logger.exception("Detalle del error:")
+        return 1
+
+    except (GraphAuthError, SharePointResolutionError) as exc:
+        logger.error("Error conectando con SharePoint (Microsoft Graph): %s", exc)
         return 1
 
     except CarteraError as exc:

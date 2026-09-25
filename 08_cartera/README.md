@@ -36,7 +36,8 @@ carpeta — sin capas domain/application/infrastructure ni interfaces
     ├── sql.py                       Sentencias T-SQL migradas literalmente de cada Execute SQL Task
     ├── db.py                        DatabaseGateway (pyodbc) + fábrica de conexiones
     │                              (una por Connection Manager OLE DB del .dtsx original)
-    ├── spreadsheet.py               SpreadsheetReader (pandas/openpyxl)
+    ├── spreadsheet.py               SpreadsheetReader: descarga el Excel de SharePoint y lo lee (pandas/openpyxl)
+    ├── sharepoint/                  auth.py (token Graph client credentials) + client.py (site/drive/descarga)
     └── config.py, logging_setup.py Carga de '.env' -> Settings + logging (archivo + consola)
 ```
 
@@ -68,7 +69,10 @@ HISTORICO CARTERA        ACTUALIZA STATUS -> LIMITA CLIENTES -> LIMPIA TEMPORAL 
 ```
 
 - **Excel de origen**: `CARTERA_FRACTALIA.xlsx`, hoja `Hoja1` (mantenido
-  manualmente por el equipo comercial).
+  manualmente por el equipo comercial). Se descarga de SharePoint vía
+  Microsoft Graph: sitio `ReportingFractalia`, biblioteca `Data Reporting`,
+  carpeta `REPOSITORIOS DE CRUDOS/CHILE/BPOCHIPE/05 CARTERA` (antes se leía de
+  la ruta local `BPO - Insumos\Chile\CARTERA`).
 - **Bases de datos** (mismo servidor SQL Server, 2 Connection Managers OLE DB
   distintos en el `.dtsx` original): `CL_TEMPORALES` (staging, tabla
   `TBL_CARTERA`) y `CL_CARTERA` (`TBL_CARTERA_ACTUAL`, `TBL_HISTORIAL_CARTERA`).
@@ -80,7 +84,10 @@ HISTORICO CARTERA        ACTUALIZA STATUS -> LIMITA CLIENTES -> LIMPIA TEMPORAL 
 
 - Python 3.11+
 - [ODBC Driver 18 for SQL Server](https://learn.microsoft.com/sql/connect/odbc/download-odbc-driver-for-sql-server)
-- Acceso de red al servidor SQL Server y al Excel de origen (ruta de red)
+- Acceso de red al servidor SQL Server
+- App Registration de Microsoft Graph con `Sites.Selected` sobre el sitio
+  `ReportingFractalia` (mismas credenciales que `04_usuarios`/`30_parque`:
+  `TENANT_ID`, `CLIENT_ID`, `CLIENT_SECRET` en `.env`)
 
 ## Instalación
 
@@ -91,8 +98,8 @@ pip install -r requirements-dev.txt
 copy .env.example .env
 ```
 
-Edite `.env` con las credenciales reales y, si aplica, ajuste las rutas de
-red (ver `.env.example`).
+Edite `.env` con las credenciales reales (SQL Server y Microsoft Graph) y,
+si aplica, ajuste sitio/carpeta/archivo de SharePoint (ver `.env.example`).
 
 ## Ejecución
 

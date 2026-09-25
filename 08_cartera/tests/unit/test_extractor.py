@@ -1,4 +1,3 @@
-from pathlib import Path
 
 import pandas as pd
 
@@ -8,7 +7,7 @@ from extraccion import extractor
 from models import Periodo
 from tests.unit.fakes import FakeSpreadsheetReader
 
-_EXCEL_PATH = Path("CARTERA_FRACTALIA.xlsx")
+_EXCEL_PATH = "05 CARTERA/CARTERA_FRACTALIA.xlsx"
 
 
 def _fila_excel(**overrides) -> dict:

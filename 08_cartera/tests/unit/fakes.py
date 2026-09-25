@@ -10,7 +10,6 @@ fakes a la implementacion real.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Sequence
 
 import pandas as pd
@@ -47,5 +46,5 @@ class FakeSpreadsheetReader:
     def __init__(self, sheets: dict[str, pd.DataFrame]) -> None:
         self._sheets = sheets
 
-    def read_sheet(self, path: Path, sheet_name: str) -> pd.DataFrame:
+    def read_sheet(self, path: str, sheet_name: str) -> pd.DataFrame:
         return self._sheets[sheet_name]

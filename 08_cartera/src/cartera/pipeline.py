@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Callable
 
 from carga import loader
@@ -49,7 +48,7 @@ class CarteraPipeline:
     db_cartera: DatabaseGateway
     db_temporales: DatabaseGateway
     spreadsheet_reader: SpreadsheetReader
-    excel_path: Path
+    excel_path: str  # ruta dentro del drive de SharePoint (carpeta + archivo)
 
     def run(self, periodo: Periodo) -> ResultadoPipeline:
         logger.info("[Cartera] Inicio del pipeline (periodo=%s)", periodo)
