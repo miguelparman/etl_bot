@@ -6,3 +6,9 @@ __pycache__/
 .pytest_cache/
 .vscode/
 *.egg-info/
+
+# Power BI (powerbi/*.pbip): la cache guarda los DATOS importados (mensajes,
+# asesores) y la configuracion local es por usuario -- nunca al repositorio.
+**/.pbi/cache.abf
+**/.pbi/localSettings.json
+*.pbix

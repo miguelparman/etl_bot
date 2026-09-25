@@ -1,0 +1,27 @@
+/// Entrada / Salida (gold.DIM_TIPO).
+table DIM_TIPO
+	lineageTag: 9c5c5d7a-9f10-4adc-8423-eb17c5845161
+
+	column TIPO_KEY
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: e6cf666b-2e12-4f1c-b8bf-e67c3fef24d6
+		summarizeBy: none
+		sourceColumn: TIPO_KEY
+
+	column TIPO
+		dataType: string
+		lineageTag: b4465517-ed9e-4647-821c-f3c17f0edbd3
+		summarizeBy: none
+		sourceColumn: TIPO
+
+	partition DIM_TIPO = m
+		mode: import
+		source =
+				let
+				    Origen = Sql.Database(Servidor, BaseDatos),
+				    Tabla = Origen{[Schema = "gold", Item = "DIM_TIPO"]}[Data]
+				in
+				    Tabla
+

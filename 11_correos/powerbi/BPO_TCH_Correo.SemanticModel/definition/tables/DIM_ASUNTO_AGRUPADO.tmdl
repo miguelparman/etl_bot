@@ -1,0 +1,27 @@
+/// Grupo del asunto: REBOTE / PRESENTACIÓN / PRUEBA / PROMO; vacio = sin grupo (gold.DIM_ASUNTO_AGRUPADO).
+table DIM_ASUNTO_AGRUPADO
+	lineageTag: 92deed20-388e-4ab9-a7f8-965365365dd5
+
+	column ASUNTO_AGRUPADO_KEY
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 9914fbf8-3a4a-4e95-b299-c7332180ff83
+		summarizeBy: none
+		sourceColumn: ASUNTO_AGRUPADO_KEY
+
+	column ASUNTO_AGRUPADO
+		dataType: string
+		lineageTag: 7e8a5956-bee3-44e7-b9d5-2917e50c7fdc
+		summarizeBy: none
+		sourceColumn: ASUNTO_AGRUPADO
+
+	partition DIM_ASUNTO_AGRUPADO = m
+		mode: import
+		source =
+				let
+				    Origen = Sql.Database(Servidor, BaseDatos),
+				    Tabla = Origen{[Schema = "gold", Item = "DIM_ASUNTO_AGRUPADO"]}[Data]
+				in
+				    Tabla
+

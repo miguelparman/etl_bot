@@ -1,0 +1,12 @@
+/// Servidor SQL Server de origen (capa gold de 11_correos).
+expression Servidor = "172.17.0.162" meta [IsParameterQuery=true, Type="Text", IsParameterQueryRequired=true]
+	lineageTag: f34753e0-0f49-4aa9-8734-2049ff3fec93
+
+	annotation PBI_ResultType = Text
+
+/// Base de datos de origen.
+expression BaseDatos = "CL_MOVIL" meta [IsParameterQuery=true, Type="Text", IsParameterQueryRequired=true]
+	lineageTag: 8abd77a8-505f-434e-8291-e54dbc40bdd8
+
+	annotation PBI_ResultType = Text
+

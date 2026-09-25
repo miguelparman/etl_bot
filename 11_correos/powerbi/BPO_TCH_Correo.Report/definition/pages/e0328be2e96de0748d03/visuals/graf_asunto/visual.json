@@ -1,0 +1,166 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.12.0/schema.json",
+  "name": "graf_asunto",
+  "position": {
+    "x": 1184,
+    "y": 386,
+    "z": 11000,
+    "height": 320,
+    "width": 704,
+    "tabOrder": 11000
+  },
+  "visual": {
+    "visualType": "donutChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DIM_ASUNTO_AGRUPADO"
+                    }
+                  },
+                  "Property": "ASUNTO_AGRUPADO"
+                }
+              },
+              "queryRef": "DIM_ASUNTO_AGRUPADO.ASUNTO_AGRUPADO",
+              "nativeQueryRef": "ASUNTO_AGRUPADO",
+              "active": true
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FACT_MENSAJE"
+                    }
+                  },
+                  "Property": "Mensajes"
+                }
+              },
+              "queryRef": "FACT_MENSAJE.Mensajes",
+              "nativeQueryRef": "Mensajes"
+            }
+          ]
+        }
+      }
+    },
+    "objects": {
+      "labels": [
+        {
+          "properties": {
+            "labelStyle": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Category, data value, percent of total'"
+                }
+              }
+            },
+            "labelDisplayUnits": {
+              "expr": {
+                "Literal": {
+                  "Value": "1D"
+                }
+              }
+            },
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "legend": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "value": [
+        {
+          "properties": {
+            "labelDisplayUnits": {
+              "expr": {
+                "Literal": {
+                  "Value": "1D"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Mensajes por grupo de asunto (vacío = sin grupo)'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "aefc8e8048b2ea806ec6",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "DIM_ASUNTO_AGRUPADO"
+              }
+            },
+            "Property": "ASUNTO_AGRUPADO"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "d2abaaacc625b041a80c",
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "FACT_MENSAJE"
+              }
+            },
+            "Property": "Mensajes"
+          }
+        },
+        "type": "Advanced"
+      }
+    ]
+  }
+}

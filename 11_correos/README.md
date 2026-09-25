@@ -293,6 +293,26 @@ los reescriben continuamente durante la jornada), así que su contenido
 cambia entre una descarga y otra aunque la copia haya funcionado bien — lo
 único que debe mantenerse estable es la estructura (hojas/columnas).
 
+## Informe Power BI
+
+`powerbi/BPO_TCH_Correo.pbip` — proyecto de Power BI (formato PBIP: modelo en
+TMDL y reporte en PBIR, texto versionable). Importa **solo el esquema
+`gold`** de `CL_MOVIL`; el servidor y la base son parámetros (`Servidor`,
+`BaseDatos`, en *Transformar datos → Administrar parámetros*). `ASUNTO` y
+`CONTACTO` se importan para la vista de detalle (carpeta *Detalle* de
+`FACT_MENSAJE`): son datos de clientes, así que el `.pbix`/la caché no deben
+compartirse fuera del equipo.
+
+- **Resumen ejecutivo**: KPIs (mensajes, entradas, salidas, entradas sin
+  rebotes, rebotes, % rebote), mensajes por día y tipo, por grupo de asunto,
+  salidas por coordinador y resumen por coordinador.
+- **Detalle por asesor**: mensajes por hora del día y actividad por asesor
+  y bandeja.
+
+Medidas en `FACT_MENSAJE` (carpetas *Volumen*, *Indicadores*, *Auditoría*).
+Abrir siempre el `.pbip` (no un `.pbix`); `.pbi/cache.abf` guarda los datos
+importados y está en `.gitignore`.
+
 ## Tests
 
 ```

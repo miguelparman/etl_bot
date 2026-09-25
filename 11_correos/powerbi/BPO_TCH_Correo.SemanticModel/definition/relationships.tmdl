@@ -1,0 +1,16 @@
+relationship 8a1f0c2e-3b4d-4e5f-9a60-7b8c9d0e1f21
+	fromColumn: FACT_MENSAJE.FECHA_KEY
+	toColumn: DIM_FECHA.FECHA_KEY
+
+relationship 8a1f0c2e-3b4d-4e5f-9a60-7b8c9d0e1f22
+	fromColumn: FACT_MENSAJE.BANDEJA_KEY
+	toColumn: DIM_BANDEJA.BANDEJA_KEY
+
+relationship 8a1f0c2e-3b4d-4e5f-9a60-7b8c9d0e1f23
+	fromColumn: FACT_MENSAJE.TIPO_KEY
+	toColumn: DIM_TIPO.TIPO_KEY
+
+relationship 8a1f0c2e-3b4d-4e5f-9a60-7b8c9d0e1f24
+	fromColumn: FACT_MENSAJE.ASUNTO_AGRUPADO_KEY
+	toColumn: DIM_ASUNTO_AGRUPADO.ASUNTO_AGRUPADO_KEY
+

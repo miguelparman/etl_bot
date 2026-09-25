@@ -1,0 +1,112 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.12.0/schema.json",
+  "name": "5adf03976993960d750b",
+  "position": {
+    "x": 1497.911832946636,
+    "y": 128.07424593967519,
+    "z": 14002,
+    "height": 96.51972157772623,
+    "width": 389.7911832946636,
+    "tabOrder": 14002
+  },
+  "visual": {
+    "visualType": "slicer",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DIM_ASUNTO_AGRUPADO"
+                    }
+                  },
+                  "Property": "ASUNTO_AGRUPADO"
+                }
+              },
+              "queryRef": "DIM_ASUNTO_AGRUPADO.ASUNTO_AGRUPADO",
+              "nativeQueryRef": "ASUNTO_AGRUPADO",
+              "active": true
+            }
+          ]
+        }
+      }
+    },
+    "objects": {
+      "data": [
+        {
+          "properties": {
+            "mode": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Dropdown'"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "header": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "general": [
+        {
+          "properties": {}
+        }
+      ]
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Asunto agrupado'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "6e90cc526eae1aa20702",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "DIM_ASUNTO_AGRUPADO"
+              }
+            },
+            "Property": "ASUNTO_AGRUPADO"
+          }
+        },
+        "type": "Categorical"
+      }
+    ]
+  }
+}

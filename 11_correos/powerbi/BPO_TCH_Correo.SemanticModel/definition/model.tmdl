@@ -1,0 +1,23 @@
+model Model
+	culture: es-PE
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	sourceQueryCulture: es-PE
+	valueFilterBehavior: independent
+	dataAccessOptions
+		legacyRedirects
+		returnErrorValuesAsNull
+
+annotation __PBI_TimeIntelligenceEnabled = 1
+
+annotation PBI_ProTooling = ["DevMode"]
+
+annotation PBI_QueryOrder = ["Servidor","BaseDatos","FACT_MENSAJE","DIM_FECHA","DIM_BANDEJA","DIM_TIPO","DIM_ASUNTO_AGRUPADO"]
+
+ref table FACT_MENSAJE
+ref table DIM_FECHA
+ref table DIM_BANDEJA
+ref table DIM_TIPO
+ref table DIM_ASUNTO_AGRUPADO
+
+ref cultureInfo es-PE
+

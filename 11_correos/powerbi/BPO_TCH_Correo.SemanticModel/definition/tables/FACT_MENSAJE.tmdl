@@ -1,0 +1,201 @@
+/// Tabla de hechos: 1 fila por mensaje (gold.FACT_MENSAJE). ASUNTO y CONTACTO
+/// son texto libre con datos de clientes: se usan en la vista de detalle.
+table FACT_MENSAJE
+	lineageTag: 4746b478-b0ba-4858-a136-235fbe343bb9
+
+	/// Total de mensajes (entradas + salidas).
+	measure Mensajes = SUM(FACT_MENSAJE[CANTIDAD])
+		formatString: #,0
+		displayFolder: Volumen
+		lineageTag: 415a7754-76ba-4352-9bd3-7c72cf49a20a
+
+	/// Mensajes recibidos (incluye rebotes).
+	measure Entradas = CALCULATE([Mensajes], KEEPFILTERS(DIM_TIPO[TIPO] = "Entrada"))
+		formatString: #,0
+		displayFolder: Volumen
+		lineageTag: c3fa2c5f-0c72-4332-91cb-c8cd9e0d48b6
+
+	/// Mensajes enviados.
+	measure Salidas = CALCULATE([Mensajes], KEEPFILTERS(DIM_TIPO[TIPO] = "Salida"))
+		formatString: #,0
+		displayFolder: Volumen
+		lineageTag: 05ff31c6-0e42-4f36-96cb-a93f4923965f
+
+	/// Notificaciones de correo no entregado (ASUNTO_AGRUPADO = REBOTE).
+	measure Rebotes = CALCULATE([Mensajes], KEEPFILTERS(DIM_ASUNTO_AGRUPADO[ASUNTO_AGRUPADO] = "REBOTE"))
+		formatString: #,0
+		displayFolder: Volumen
+		lineageTag: 4bd6de8d-7a58-4df2-bedd-07fd7a8f30b4
+
+	/// Entradas sin contar rebotes: correos realmente recibidos de clientes.
+	measure 'Entradas reales' = CALCULATE([Entradas], KEEPFILTERS(DIM_ASUNTO_AGRUPADO[ASUNTO_AGRUPADO] <> "REBOTE"))
+		formatString: #,0
+		displayFolder: Volumen
+		lineageTag: 9031585e-1db2-4b88-a29e-80d291850787
+
+	/// Porcentaje de las entradas que son rebotes.
+	measure '% Rebote' = DIVIDE([Rebotes], [Entradas])
+		formatString: 0.0%
+		displayFolder: Indicadores
+		lineageTag: cfef6970-73cf-4960-8c9b-e9a4bfa77aa1
+
+	/// Asesores con al menos un mensaje en el contexto filtrado.
+	measure 'Asesores activos' = CALCULATE(DISTINCTCOUNT(DIM_BANDEJA[ASESOR]), FACT_MENSAJE)
+		formatString: #,0
+		displayFolder: Indicadores
+		lineageTag: b4c6e21e-cde9-46bf-90c6-cf03de772faf
+
+	/// Promedio de mensajes por asesor activo.
+	measure 'Mensajes por asesor (prom.)' = DIVIDE([Mensajes], [Asesores activos])
+		formatString: #,0.0
+		displayFolder: Indicadores
+		lineageTag: ed76dde9-d7e8-43e8-ba13-84d2ca6c55ec
+
+	/// Fecha y hora (local Peru/Bogota) de la ultima carga del ETL.
+	measure 'Última carga' = MAX(FACT_MENSAJE[FECHA_CARGA])
+		formatString: General Date
+		displayFolder: Auditoría
+		lineageTag: f814feee-afdf-4854-9dbf-de392a25f92a
+
+	column MENSAJE_KEY
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: b68c5308-23c9-4d63-b4f1-6ec7e563e75a
+		summarizeBy: none
+		sourceColumn: MENSAJE_KEY
+
+	column FECHA_KEY
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 95c0be21-3395-4574-8c00-def56d86388d
+		summarizeBy: none
+		sourceColumn: FECHA_KEY
+
+	/// Hora del dia (0-23), hora local Peru/Bogota.
+	column HORA_LOCAL
+		dataType: int64
+		formatString: 0
+		lineageTag: 6aa36c53-8f79-4d2f-81cf-87d44b45222e
+		summarizeBy: none
+		sourceColumn: HORA_LOCAL
+
+	column BANDEJA_KEY
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: fa6d1cc4-7794-4b11-ba3d-46c92d04b065
+		summarizeBy: none
+		sourceColumn: BANDEJA_KEY
+
+	column TIPO_KEY
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 28e68746-2b33-45bc-8577-543de8308769
+		summarizeBy: none
+		sourceColumn: TIPO_KEY
+
+	column ASUNTO_AGRUPADO_KEY
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 06f1308e-f237-43d5-8d04-76ceaa82171c
+		summarizeBy: none
+		sourceColumn: ASUNTO_AGRUPADO_KEY
+
+	column ID_MENSAJE
+		dataType: string
+		lineageTag: d5155e42-705e-48ec-9344-83ddf3b5e362
+		summarizeBy: none
+		sourceColumn: ID_MENSAJE
+
+	column CONVERSATION_ID
+		dataType: string
+		lineageTag: 60058832-1df8-4741-83da-8a82d0217f58
+		summarizeBy: none
+		sourceColumn: CONVERSATION_ID
+
+	/// Asunto del correo (texto libre, tal como llega).
+	column ASUNTO
+		dataType: string
+		displayFolder: Detalle
+		lineageTag: 90cd75bc-453b-4ce3-9679-3610e3af6688
+		summarizeBy: none
+		sourceColumn: ASUNTO
+
+	/// Direccion(es) del cliente; puede traer varias separadas por ';'.
+	column CONTACTO
+		dataType: string
+		displayFolder: Detalle
+		lineageTag: 961dd185-f860-4361-9619-ef76901beb61
+		summarizeBy: none
+		sourceColumn: CONTACTO
+
+	column FECHA_HORA_UTC
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 8e7a2e4b-0864-4e4f-8107-951b0014ed50
+		summarizeBy: none
+		sourceColumn: FECHA_HORA_UTC
+
+	column FECHA_HORA_LOCAL
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: e2a6eeff-d403-4579-9660-eddaf42c637f
+		summarizeBy: none
+		sourceColumn: FECHA_HORA_LOCAL
+
+	column CANTIDAD
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: e1f2755a-ffc3-4ae8-802a-8b3d08a5ce54
+		summarizeBy: sum
+		sourceColumn: CANTIDAD
+
+	column TABLA_ORIGEN
+		dataType: string
+		displayFolder: Auditoría
+		lineageTag: dbf74dd2-3ce9-4505-bcad-abcc0aab0aa6
+		summarizeBy: none
+		sourceColumn: TABLA_ORIGEN
+
+	column PROCESO_CARGA
+		dataType: string
+		displayFolder: Auditoría
+		lineageTag: 3be44625-15bc-4e3d-a439-3485cdd6d0cc
+		summarizeBy: none
+		sourceColumn: PROCESO_CARGA
+
+	column ID_EJECUCION
+		dataType: int64
+		formatString: 0
+		displayFolder: Auditoría
+		lineageTag: 4836867a-937b-42ae-ab75-b151dedd4019
+		summarizeBy: none
+		sourceColumn: ID_EJECUCION
+
+	column FECHA_CARGA
+		dataType: dateTime
+		formatString: General Date
+		displayFolder: Auditoría
+		lineageTag: b71dbd8e-6b8d-4c3d-9b3b-06968e6691dc
+		summarizeBy: none
+		sourceColumn: FECHA_CARGA
+
+	partition FACT_MENSAJE = m
+		mode: import
+		source =
+				let
+				    Origen = Sql.Database(Servidor, BaseDatos),
+				    Tabla = Origen{[Schema = "gold", Item = "FACT_MENSAJE"]}[Data],
+				    Columnas = Table.SelectColumns(Tabla, {
+				        "MENSAJE_KEY", "FECHA_KEY", "HORA_LOCAL", "BANDEJA_KEY", "TIPO_KEY", "ASUNTO_AGRUPADO_KEY",
+				        "ID_MENSAJE", "CONVERSATION_ID", "ASUNTO", "CONTACTO", "FECHA_HORA_UTC", "FECHA_HORA_LOCAL", "CANTIDAD",
+				        "TABLA_ORIGEN", "PROCESO_CARGA", "ID_EJECUCION", "FECHA_CARGA"
+				    })
+				in
+				    Columnas
+

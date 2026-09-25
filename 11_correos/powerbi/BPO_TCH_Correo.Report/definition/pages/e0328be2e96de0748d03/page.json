@@ -1,0 +1,25 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.1.0/schema.json",
+  "name": "e0328be2e96de0748d03",
+  "displayName": "Resumen ejecutivo",
+  "displayOption": "FitToWidth",
+  "height": 1600,
+  "width": 1920,
+  "visualInteractions": [
+    {
+      "source": "graf_mensajes_dia",
+      "target": "graf_asunto",
+      "type": "DataFilter"
+    },
+    {
+      "source": "graf_coordinador",
+      "target": "graf_asunto",
+      "type": "DataFilter"
+    },
+    {
+      "source": "tabla_coordinador",
+      "target": "graf_asunto",
+      "type": "DataFilter"
+    }
+  ]
+}

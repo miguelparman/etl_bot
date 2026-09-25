@@ -1,0 +1,171 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.12.0/schema.json",
+  "name": "graf_hora",
+  "position": {
+    "x": 32,
+    "y": 240,
+    "z": 5000,
+    "height": 300,
+    "width": 1856,
+    "tabOrder": 5000
+  },
+  "visual": {
+    "visualType": "clusteredColumnChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FACT_MENSAJE"
+                    }
+                  },
+                  "Property": "HORA_LOCAL"
+                }
+              },
+              "queryRef": "FACT_MENSAJE.HORA_LOCAL",
+              "nativeQueryRef": "HORA_LOCAL",
+              "active": true
+            }
+          ]
+        },
+        "Series": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DIM_TIPO"
+                    }
+                  },
+                  "Property": "TIPO"
+                }
+              },
+              "queryRef": "DIM_TIPO.TIPO",
+              "nativeQueryRef": "TIPO"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FACT_MENSAJE"
+                    }
+                  },
+                  "Property": "Mensajes"
+                }
+              },
+              "queryRef": "FACT_MENSAJE.Mensajes",
+              "nativeQueryRef": "Mensajes"
+            }
+          ]
+        }
+      }
+    },
+    "objects": {
+      "labels": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "categoryAxis": [
+        {
+          "properties": {
+            "axisType": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Categorical'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Mensajes por hora del día (hora local)'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "d28cb6bca300d2ee1d37",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "FACT_MENSAJE"
+              }
+            },
+            "Property": "HORA_LOCAL"
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "e8521984164a1036e212",
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "FACT_MENSAJE"
+              }
+            },
+            "Property": "Mensajes"
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "772c81eaa021a0dd9896",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "DIM_TIPO"
+              }
+            },
+            "Property": "TIPO"
+          }
+        },
+        "type": "Categorical"
+      }
+    ]
+  }
+}

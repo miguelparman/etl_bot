@@ -1,0 +1,325 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.12.0/schema.json",
+  "name": "d19afa75a070eaca3a49",
+  "position": {
+    "x": 31.55452436194896,
+    "y": 1174.9419953596289,
+    "z": 14001,
+    "height": 402.78422273781905,
+    "width": 1856.1484918793506,
+    "tabOrder": 14001
+  },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DIM_BANDEJA"
+                    }
+                  },
+                  "Property": "BANDEJA"
+                }
+              },
+              "queryRef": "DIM_BANDEJA.BANDEJA",
+              "nativeQueryRef": "BANDEJA"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DIM_TIPO"
+                    }
+                  },
+                  "Property": "TIPO"
+                }
+              },
+              "queryRef": "DIM_TIPO.TIPO",
+              "nativeQueryRef": "TIPO"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FACT_MENSAJE"
+                    }
+                  },
+                  "Property": "FECHA_HORA_UTC"
+                }
+              },
+              "queryRef": "FACT_MENSAJE.FECHA_HORA_UTC",
+              "nativeQueryRef": "FECHA_HORA_UTC"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FACT_MENSAJE"
+                    }
+                  },
+                  "Property": "CONTACTO"
+                }
+              },
+              "queryRef": "FACT_MENSAJE.CONTACTO",
+              "nativeQueryRef": "CONTACTO"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FACT_MENSAJE"
+                    }
+                  },
+                  "Property": "ASUNTO"
+                }
+              },
+              "queryRef": "FACT_MENSAJE.ASUNTO",
+              "nativeQueryRef": "ASUNTO"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FACT_MENSAJE"
+                    }
+                  },
+                  "Property": "ID_MENSAJE"
+                }
+              },
+              "queryRef": "FACT_MENSAJE.ID_MENSAJE",
+              "nativeQueryRef": "ID_MENSAJE"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DIM_BANDEJA"
+                    }
+                  },
+                  "Property": "ASESOR"
+                }
+              },
+              "queryRef": "DIM_BANDEJA.ASESOR",
+              "nativeQueryRef": "ASESOR"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DIM_ASUNTO_AGRUPADO"
+                    }
+                  },
+                  "Property": "ASUNTO_AGRUPADO"
+                }
+              },
+              "queryRef": "DIM_ASUNTO_AGRUPADO.ASUNTO_AGRUPADO",
+              "nativeQueryRef": "ASUNTO_AGRUPADO"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DIM_BANDEJA"
+                    }
+                  },
+                  "Property": "COORDINADOR"
+                }
+              },
+              "queryRef": "DIM_BANDEJA.COORDINADOR",
+              "nativeQueryRef": "COORDINADOR"
+            }
+          ]
+        }
+      }
+    },
+    "objects": {
+      "columnWidth": [
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "190.28591597757136D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "FACT_MENSAJE.Mensajes por asesor"
+          }
+        }
+      ],
+      "columnHeaders": [
+        {
+          "properties": {}
+        }
+      ]
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Resumen por coordinador'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "3f43b720adbecc41a647",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "DIM_BANDEJA"
+              }
+            },
+            "Property": "BANDEJA"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "a5d5c300991db2c13044",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "DIM_TIPO"
+              }
+            },
+            "Property": "TIPO"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "2ca603e6e0ab4919763c",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "FACT_MENSAJE"
+              }
+            },
+            "Property": "FECHA_HORA_UTC"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "c32f1cbfc979a0427935",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "FACT_MENSAJE"
+              }
+            },
+            "Property": "CONTACTO"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "6b3d2cd580a6430c5022",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "FACT_MENSAJE"
+              }
+            },
+            "Property": "ASUNTO"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "8e1e5a49d8c4779116ea",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "FACT_MENSAJE"
+              }
+            },
+            "Property": "ID_MENSAJE"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "cf1e5f7f7b76b5408833",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "DIM_BANDEJA"
+              }
+            },
+            "Property": "ASESOR"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "dc3155e1b2d80e483b11",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "DIM_ASUNTO_AGRUPADO"
+              }
+            },
+            "Property": "ASUNTO_AGRUPADO"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "630adf073c1a23600230",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "DIM_BANDEJA"
+              }
+            },
+            "Property": "COORDINADOR"
+          }
+        },
+        "type": "Categorical"
+      }
+    ]
+  }
+}

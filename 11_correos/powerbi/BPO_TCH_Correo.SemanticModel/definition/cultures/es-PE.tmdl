@@ -1,0 +1,116 @@
+cultureInfo es-PE
+
+	linguisticMetadata =
+			{
+			  "Version": "2.0.0",
+			  "Language": "en-US",
+			  "Entities": {
+			    "dim_bandeja.coordinador": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "DIM_BANDEJA",
+			          "ConceptualProperty": "COORDINADOR"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Coordinador": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "dim_bandeja.asesor": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "DIM_BANDEJA",
+			          "ConceptualProperty": "ASESOR"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Asesor": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "dim_bandeja.bandeja": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "DIM_BANDEJA",
+			          "ConceptualProperty": "BANDEJA"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Bandeja": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "dim_bandeja.ultima_revision_entrada_utc": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "DIM_BANDEJA",
+			          "ConceptualProperty": "ULTIMA_REVISION_ENTRADA_UTC"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Última revisión entrada (UTC)": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "dim_bandeja.ultima_revision_salida_utc": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "DIM_BANDEJA",
+			          "ConceptualProperty": "ULTIMA_REVISION_SALIDA_UTC"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Última revisión salida (UTC)": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    }
+			  }
+			}
+		contentType: json
+

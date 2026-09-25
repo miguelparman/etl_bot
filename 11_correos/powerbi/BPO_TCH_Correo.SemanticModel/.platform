@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "SemanticModel",
+    "displayName": "BPO_TCH_Correo"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "7076937d-f29a-4cf2-a23d-e053e1a9d275"
+  }
+}

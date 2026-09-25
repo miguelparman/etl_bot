@@ -1,0 +1,59 @@
+/// Bandeja de correo con su asesor (1:1) y coordinador (gold.DIM_BANDEJA).
+table DIM_BANDEJA
+	lineageTag: 9232111c-fe3e-4e74-8ae5-7d5d45b9872e
+
+	column BANDEJA_KEY
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: ff878a82-a7f6-476b-9bef-56c6c003ec3b
+		summarizeBy: none
+		sourceColumn: BANDEJA_KEY
+
+	column BANDEJA
+		dataType: string
+		lineageTag: 17979a22-b298-40a5-bcd6-f75fac13d54e
+		summarizeBy: none
+		sourceColumn: BANDEJA
+
+	column ASESOR
+		dataType: string
+		lineageTag: b4809f71-d924-4a38-bc7c-3b30404a78b5
+		summarizeBy: none
+		sourceColumn: ASESOR
+
+	column COORDINADOR
+		dataType: string
+		lineageTag: 71402c88-4df5-4535-b3de-7a5938d7244a
+		summarizeBy: none
+		sourceColumn: COORDINADOR
+
+	column ORIGEN
+		dataType: string
+		lineageTag: 4d642a38-bd06-4131-b409-d774f3e082a5
+		summarizeBy: none
+		sourceColumn: ORIGEN
+
+	column ULTIMA_REVISION_ENTRADA_UTC
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 400f71ab-7036-4fb7-9b23-8d6624eef05f
+		summarizeBy: none
+		sourceColumn: ULTIMA_REVISION_ENTRADA_UTC
+
+	column ULTIMA_REVISION_SALIDA_UTC
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: afe0735f-3e46-40ee-932e-8e4721b5a4e3
+		summarizeBy: none
+		sourceColumn: ULTIMA_REVISION_SALIDA_UTC
+
+	partition DIM_BANDEJA = m
+		mode: import
+		source =
+				let
+				    Origen = Sql.Database(Servidor, BaseDatos),
+				    Tabla = Origen{[Schema = "gold", Item = "DIM_BANDEJA"]}[Data]
+				in
+				    Tabla
+

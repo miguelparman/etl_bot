@@ -1,0 +1,102 @@
+/// Calendario (gold.DIM_FECHA), fecha local Peru/Bogota. Marcada como tabla de fechas.
+table DIM_FECHA
+	lineageTag: e8d27491-322b-4e39-b437-f5435a4b4092
+	dataCategory: Time
+
+	column FECHA_KEY
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 1faf8b38-4e26-42c2-bc5e-774fce3df5e2
+		summarizeBy: none
+		sourceColumn: FECHA_KEY
+
+	column FECHA
+		dataType: dateTime
+		isKey
+		formatString: Short Date
+		lineageTag: 537ce026-ab6a-4f01-9f6b-c637d441e1a6
+		summarizeBy: none
+		sourceColumn: FECHA
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column ANIO
+		dataType: int64
+		formatString: 0
+		lineageTag: 62f81621-dde1-4a57-992d-6ac9c129a31b
+		summarizeBy: none
+		sourceColumn: ANIO
+
+	column TRIMESTRE
+		dataType: int64
+		formatString: 0
+		lineageTag: 5a45ef43-db9a-4a44-94cf-94463d252151
+		summarizeBy: none
+		sourceColumn: TRIMESTRE
+
+	column MES
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 1f7e88be-5688-4ecb-88e6-b4e877ad96fd
+		summarizeBy: none
+		sourceColumn: MES
+
+	column NOMBRE_MES
+		dataType: string
+		lineageTag: 29296e85-6575-4b62-9077-dd1b8477042a
+		summarizeBy: none
+		sourceColumn: NOMBRE_MES
+		sortByColumn: MES
+
+	column ANIO_MES
+		dataType: string
+		lineageTag: 8992eb64-c576-4bd6-83dd-ac883b2ec8a6
+		summarizeBy: none
+		sourceColumn: ANIO_MES
+
+	column DIA
+		dataType: int64
+		formatString: 0
+		lineageTag: 6992404a-996f-406e-90f0-117e4dc0105b
+		summarizeBy: none
+		sourceColumn: DIA
+
+	column DIA_SEMANA
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 7d165d93-d1ca-4a02-ad08-7f223fc6cb54
+		summarizeBy: none
+		sourceColumn: DIA_SEMANA
+
+	column NOMBRE_DIA
+		dataType: string
+		lineageTag: 3c33bf1d-7286-471e-bb60-a14960ba987b
+		summarizeBy: none
+		sourceColumn: NOMBRE_DIA
+		sortByColumn: DIA_SEMANA
+
+	column SEMANA_ISO
+		dataType: int64
+		formatString: 0
+		lineageTag: 23a56cf7-1c6b-4a4b-a162-7bfacd345731
+		summarizeBy: none
+		sourceColumn: SEMANA_ISO
+
+	column ES_FIN_DE_SEMANA
+		dataType: boolean
+		lineageTag: ce6436b0-4857-4e56-af63-c79ea1be2025
+		summarizeBy: none
+		sourceColumn: ES_FIN_DE_SEMANA
+
+	partition DIM_FECHA = m
+		mode: import
+		source =
+				let
+				    Origen = Sql.Database(Servidor, BaseDatos),
+				    Tabla = Origen{[Schema = "gold", Item = "DIM_FECHA"]}[Data]
+				in
+				    Tabla
+

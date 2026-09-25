@@ -1,0 +1,194 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.12.0/schema.json",
+  "name": "tabla_asesor",
+  "position": {
+    "x": 32,
+    "y": 556,
+    "z": 6000,
+    "height": 492,
+    "width": 1856,
+    "tabOrder": 6000
+  },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DIM_BANDEJA"
+                    }
+                  },
+                  "Property": "COORDINADOR"
+                }
+              },
+              "queryRef": "DIM_BANDEJA.COORDINADOR",
+              "nativeQueryRef": "COORDINADOR",
+              "displayName": "Coordinador"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DIM_BANDEJA"
+                    }
+                  },
+                  "Property": "ASESOR"
+                }
+              },
+              "queryRef": "DIM_BANDEJA.ASESOR",
+              "nativeQueryRef": "ASESOR",
+              "displayName": "Asesor"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DIM_BANDEJA"
+                    }
+                  },
+                  "Property": "BANDEJA"
+                }
+              },
+              "queryRef": "DIM_BANDEJA.BANDEJA",
+              "nativeQueryRef": "BANDEJA",
+              "displayName": "Bandeja"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FACT_MENSAJE"
+                    }
+                  },
+                  "Property": "Entradas reales"
+                }
+              },
+              "queryRef": "FACT_MENSAJE.Entradas reales",
+              "nativeQueryRef": "Entradas reales"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FACT_MENSAJE"
+                    }
+                  },
+                  "Property": "Salidas"
+                }
+              },
+              "queryRef": "FACT_MENSAJE.Salidas",
+              "nativeQueryRef": "Salidas"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FACT_MENSAJE"
+                    }
+                  },
+                  "Property": "Rebotes"
+                }
+              },
+              "queryRef": "FACT_MENSAJE.Rebotes",
+              "nativeQueryRef": "Rebotes"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FACT_MENSAJE"
+                    }
+                  },
+                  "Property": "% Rebote"
+                }
+              },
+              "queryRef": "FACT_MENSAJE.% Rebote",
+              "nativeQueryRef": "% Rebote"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DIM_BANDEJA"
+                    }
+                  },
+                  "Property": "ULTIMA_REVISION_ENTRADA_UTC"
+                }
+              },
+              "queryRef": "DIM_BANDEJA.ULTIMA_REVISION_ENTRADA_UTC",
+              "nativeQueryRef": "ULTIMA_REVISION_ENTRADA_UTC",
+              "displayName": "Última revisión entrada (UTC)"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DIM_BANDEJA"
+                    }
+                  },
+                  "Property": "ULTIMA_REVISION_SALIDA_UTC"
+                }
+              },
+              "queryRef": "DIM_BANDEJA.ULTIMA_REVISION_SALIDA_UTC",
+              "nativeQueryRef": "ULTIMA_REVISION_SALIDA_UTC",
+              "displayName": "Última revisión salida (UTC)"
+            }
+          ]
+        }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Column": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "DIM_BANDEJA"
+                  }
+                },
+                "Property": "ULTIMA_REVISION_ENTRADA_UTC"
+              }
+            },
+            "direction": "Ascending"
+          }
+        ]
+      }
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Actividad por asesor y bandeja'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}
