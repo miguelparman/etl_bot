@@ -53,6 +53,7 @@ import mappings
 from carga import loader
 from db import DatabaseGateway
 from exceptions import PipelineError
+from logging_setup import CONSOLA
 from extraccion import extractor
 from models import ResultadoPipeline, ResultadoSubPipeline
 from sharepoint.reader import SharePointCsvReader, SharePointExcelReader
@@ -119,7 +120,7 @@ class VentasPipeline:
         )
         self._step(nombre, "Contenedor de secuencias / UPDATE", transformer.corregir_dni_desde_tabla_dni, self.db)
 
-        logger.info("[senalizaciones] Finalizado: %s", filas_por_paso)
+        logger.info("[senalizaciones] Finalizado: %s", filas_por_paso, extra=CONSOLA)
         return ResultadoSubPipeline(nombre=nombre, filas_por_paso=filas_por_paso)
 
     def ejecutar_ventas(self, fecha: date) -> ResultadoSubPipeline:
@@ -139,7 +140,7 @@ class VentasPipeline:
 
         self._local(nombre, filas_por_paso, fecha)
 
-        logger.info("[ventas] Finalizado: %s", filas_por_paso)
+        logger.info("[ventas] Finalizado: %s", filas_por_paso, extra=CONSOLA)
         return ResultadoSubPipeline(nombre=nombre, filas_por_paso=filas_por_paso)
 
     def ejecutar_todo(self, fecha: date) -> ResultadoPipeline:

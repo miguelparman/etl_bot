@@ -56,7 +56,7 @@ sys.path.insert(0, str(BASE_DIR / "src" / "ventas"))
 import mappings
 from config import cargar_configuracion
 from exceptions import ExtraccionError, VentasError
-from logging_setup import NOMBRE_LOGGER, configurar_logging
+from logging_setup import CONSOLA, NOMBRE_LOGGER, configurar_logging
 from sharepoint.auth import get_graph_token
 from sharepoint.client import SharePointClient
 
@@ -138,7 +138,7 @@ def main() -> int:
 
         subir_senhalizaciones_csv(client, drive_id, settings.sharepoint.folder_path)
 
-        logger.info("Exportacion completada.")
+        logger.info("Exportacion completada.", extra=CONSOLA)
         return 0
     except VentasError as exc:
         logger.error("Error de configuracion: %s", exc)

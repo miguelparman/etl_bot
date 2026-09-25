@@ -70,7 +70,7 @@ from copiar_funnel_ventas import copiar_funnel_ventas
 from db import DatabaseGateway, crear_conexion
 from exceptions import PipelineError, VentasError
 from exportar_senhalizaciones_csv import subir_senhalizaciones_csv
-from logging_setup import NOMBRE_LOGGER, configurar_logging
+from logging_setup import CONSOLA, NOMBRE_LOGGER, configurar_logging, resumen_avisos
 from mappings import ARCHIVO_FUNNEL_VENTAS_XLSX, ARCHIVO_SENHALIZACIONES_CSV, CSV_DELIMITER
 from pipeline import VentasPipeline
 from sharepoint.auth import get_graph_token
@@ -112,7 +112,7 @@ def main() -> int:
         )
         return 1
 
-    logger.info("Iniciando VENTAS (paquete=%s) con fecha=%s.", args.paquete, settings.fecha)
+    logger.info("Iniciando VENTAS (paquete=%s) con fecha=%s.", args.paquete, settings.fecha, extra=CONSOLA)
 
     conn = None
     try:
@@ -135,11 +135,11 @@ def main() -> int:
         # (Execute Process Task), asi que esto replica ese comportamiento en
         # vez de depender de que alguien corra los scripts sueltos antes.
         if args.paquete in ("senalizaciones", "todos"):
-            logger.info("Paso 0b: actualizando '%s' desde Google Sheets...", ARCHIVO_SENHALIZACIONES_CSV)
+            logger.info("Paso 0b: actualizando '%s' desde Google Sheets...", ARCHIVO_SENHALIZACIONES_CSV, extra=CONSOLA)
             subir_senhalizaciones_csv(client, drive_id, settings.sharepoint.folder_path)
         if args.paquete in ("ventas", "todos"):
             origen = cargar_configuracion_origen(BASE_DIR)
-            logger.info("Paso 0a: actualizando '%s' desde el sitio BPO...", ARCHIVO_FUNNEL_VENTAS_XLSX)
+            logger.info("Paso 0a: actualizando '%s' desde el sitio BPO...", ARCHIVO_FUNNEL_VENTAS_XLSX, extra=CONSOLA)
             copiar_funnel_ventas(origen, client, drive_id, settings.sharepoint.folder_path)
 
         conn = crear_conexion(settings.db)
@@ -151,14 +151,15 @@ def main() -> int:
         )
 
         if args.paquete == "senalizaciones":
-            resultado = pipeline.ejecutar_senalizaciones()
-            logger.info("Proceso finalizado correctamente: %s", resultado)
+            pipeline.ejecutar_senalizaciones()
         elif args.paquete == "ventas":
-            resultado = pipeline.ejecutar_ventas(settings.fecha)
-            logger.info("Proceso finalizado correctamente: %s", resultado)
+            pipeline.ejecutar_ventas(settings.fecha)
         else:
-            resultado = pipeline.ejecutar_todo(settings.fecha)
-            logger.info("Proceso finalizado correctamente: %s sub-pipelines completados.", len(resultado.resultados))
+            pipeline.ejecutar_todo(settings.fecha)
+        avisos = resumen_avisos()
+        if avisos:
+            logger.info(avisos, extra=CONSOLA)
+        logger.info("Proceso finalizado correctamente.", extra=CONSOLA)
         return 0
 
     except PipelineError as exc:

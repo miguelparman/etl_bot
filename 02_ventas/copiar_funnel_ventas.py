@@ -31,7 +31,7 @@ sys.path.insert(0, str(BASE_DIR / "src" / "ventas"))
 
 from config import SharePointOrigenSettings, cargar_configuracion, cargar_configuracion_origen
 from exceptions import ExtraccionError, VentasError
-from logging_setup import NOMBRE_LOGGER, configurar_logging
+from logging_setup import CONSOLA, NOMBRE_LOGGER, configurar_logging
 from mappings import ARCHIVO_FUNNEL_VENTAS_XLSX
 from sharepoint.auth import get_graph_token
 from sharepoint.client import SharePointClient
@@ -90,7 +90,7 @@ def main() -> int:
 
         bytes_copiados = copiar_funnel_ventas(origen, cliente_destino, drive_id_destino, settings.sharepoint.folder_path)
 
-        logger.info("Copia completada (%s bytes).", bytes_copiados)
+        logger.info("Copia completada (%s bytes).", bytes_copiados, extra=CONSOLA)
         return 0
     except VentasError as exc:
         logger.error("Error de configuracion: %s", exc)
